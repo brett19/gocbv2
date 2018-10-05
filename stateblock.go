@@ -11,7 +11,7 @@ type clientStateBlock struct {
 }
 
 func (sb *clientStateBlock) Hash() string {
-	return fmt.Sprintf("%s-%b",
+	return fmt.Sprintf("%s-%t",
 		sb.BucketName,
 		sb.UseMutationTokens)
 }
