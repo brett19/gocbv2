@@ -3,18 +3,64 @@ package gocb
 import (
 	"encoding/json"
 	"errors"
+	"sync"
 	"time"
 
 	gocbcore "gopkg.in/couchbase/gocbcore.v7"
 )
 
 type Collection struct {
-	sb stateBlock
+	sb   stateBlock
+	csb  *collectionStateBlock
+	lock sync.Mutex
+}
+
+func (c *Collection) setCollectionID(scopeID uint32, collectionID uint32) error {
+	if c.initialized() {
+		return errors.New("collection already initialized")
+	}
+
+	c.lock.Lock()
+	c.csb.CollectionInitialized = true
+	c.csb.CollectionID = collectionID
+	c.csb.ScopeID = scopeID
+	c.lock.Unlock()
+
+	return nil
+}
+
+func (c *Collection) collectionID() uint32 {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.csb.CollectionID
+}
+
+func (c *Collection) initialized() bool {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.csb.CollectionInitialized
+}
+
+func (c *Collection) setCollectionUnknown() {
+	c.csb.CollectionUnknown = true
+}
+
+func (c *Collection) setScopeUnknown() {
+	c.csb.ScopeUnknown = true
+}
+
+func (c *Collection) scopeUnknown() bool {
+	return c.csb.ScopeUnknown
+}
+
+func (c *Collection) collectionUnknown() bool {
+	return c.csb.CollectionUnknown
 }
 
 func newCollection(scope *Scope, collectionName string) *Collection {
 	collection := &Collection{
-		sb: scope.sb,
+		sb:  scope.sb,
+		csb: &collectionStateBlock{},
 	}
 	collection.sb.CollectionName = collectionName
 	collection.sb.recacheClient()
@@ -51,10 +97,30 @@ func (c *Collection) getAgentAndCollection() (uint32, *gocbcore.Agent, error) {
 		return 0, nil, err
 	}
 
-	collectionID, err := client.fetchCollectionID(c.sb.ScopeName, c.sb.CollectionName)
+	if c.scopeUnknown() {
+		return 0, nil, gocbcore.ErrScopeUnknown // TODO: probably not how we want to do this
+	}
+
+	if c.collectionUnknown() {
+		return 0, nil, gocbcore.ErrCollectionUnknown // TODO: probably not how we want to do this
+	}
+
+	if c.initialized() {
+		return c.collectionID(), agent, nil
+	}
+
+	scopeID, collectionID, err := client.fetchCollectionID(c.sb.ScopeName, c.sb.CollectionName)
 	if err != nil {
+		if gocbcore.IsErrorStatus(err, gocbcore.StatusScopeUnknown) { //TODO: is this how we want to do this?
+			c.setScopeUnknown()
+		}
+		if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) { //TODO: is this how we want to do this?
+			c.setCollectionUnknown()
+		}
 		return 0, nil, err
 	}
+
+	c.setCollectionID(scopeID, collectionID)
 
 	return collectionID, agent, nil
 }

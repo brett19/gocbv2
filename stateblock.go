@@ -16,6 +16,14 @@ func (sb *clientStateBlock) Hash() string {
 		sb.UseMutationTokens)
 }
 
+type collectionStateBlock struct {
+	CollectionID          uint32
+	ScopeID               uint32
+	CollectionInitialized bool
+	CollectionUnknown     bool
+	ScopeUnknown          bool
+}
+
 type stateBlock struct {
 	cluster      *Cluster
 	cachedClient *client

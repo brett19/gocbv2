@@ -15,16 +15,12 @@ type client struct {
 	state   clientStateBlock
 	lock    sync.Mutex
 	agent   atomic.Value // *gocbcore.Agent
-
-	collectionsLock sync.Mutex
-	collectionIDs   map[string]uint32
 }
 
 func newClient(cluster *Cluster, sb *clientStateBlock) *client {
 	client := &client{
-		cluster:       cluster,
-		state:         *sb,
-		collectionIDs: make(map[string]uint32),
+		cluster: cluster,
+		state:   *sb,
 	}
 	return client
 }
@@ -100,30 +96,20 @@ func (c *client) fetchCollectionManifest() (bytesOut []byte, errOut error) {
 	return
 }
 
-func (c *client) fetchCollectionID(scopeName string, collectionName string) (uint32, error) {
+func (c *client) fetchCollectionID(scopeName string, collectionName string) (uint32, uint32, error) {
 	if scopeName == "_default" && collectionName == "_default" {
-		return 0, nil
+		return 0, 0, nil
 	}
-
-	idKey := scopeName + "/" + collectionName
-
-	c.collectionsLock.Lock()
-	foundID := c.collectionIDs[idKey]
-	if foundID > 0 {
-		c.collectionsLock.Unlock()
-		return foundID, nil
-	}
-	c.collectionsLock.Unlock()
 
 	manifestBytes, err := c.fetchCollectionManifest()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	var manifest gocbcore.CollectionManifest
 	err = json.Unmarshal(manifestBytes, &manifest)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	var foundScope *gocbcore.CollectionManifestScope
@@ -134,7 +120,7 @@ func (c *client) fetchCollectionID(scopeName string, collectionName string) (uin
 		}
 	}
 	if foundScope == nil {
-		return 0, errors.New("Invalid Scope Name")
+		return 0, 0, errors.New("Invalid Scope Name")
 	}
 
 	var foundCollection *gocbcore.CollectionManifestCollection
@@ -145,14 +131,11 @@ func (c *client) fetchCollectionID(scopeName string, collectionName string) (uin
 		}
 	}
 	if foundCollection == nil {
-		return 0, errors.New("Invalid Collection Name")
+		return 0, 0, gocbcore.ErrCollectionUnknown //TODO: won't be how we want to do this
 	}
 
+	scopeID := uint32(foundScope.UID)
 	collectionID := uint32(foundCollection.UID)
 
-	c.collectionsLock.Lock()
-	c.collectionIDs[idKey] = collectionID
-	c.collectionsLock.Unlock()
-
-	return collectionID, nil
+	return scopeID, collectionID, nil
 }
