@@ -1,25 +1,22 @@
 package gocb
 
 import (
-	"fmt"
 	"testing"
 )
 
 func TestBasicConnect(t *testing.T) {
-	SetLogger(VerboseStdioLogger())
 	auth := PasswordAuthenticator{
 		Username: "Administrator",
-		Password: "password",
+		Password: "C0uchbase",
 	}
 
-	cluster, err := Connect("couchbase://10.112.191.101", auth)
+	cluster, err := Connect("couchbase://192.168.0.112", auth)
 	if err != nil {
 		t.Fatalf("Failed to connect to cluster: %s", err)
 	}
 
 	bucket := cluster.Bucket("test")
-	col := bucket.Collection("test9")
-	col2 := col.WithDurability(1, 1)
+	col := bucket.DefaultCollection()
 
 	doc, err := NewDocument("sometext")
 	if err != nil {
@@ -32,9 +29,9 @@ func TestBasicConnect(t *testing.T) {
 	}
 
 	err = col.Remove("testkey", &RemoveOptions{})
-	// if err != nil {
-	// 	t.Fatalf("Failed to fetch key: %s", err)
-	// }
+	if err != nil {
+		t.Fatalf("Failed to fetch key: %s", err)
+	}
 
 	doc, err = NewDocument("someothertext")
 	if err != nil {
@@ -58,8 +55,6 @@ func TestBasicConnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to fetch key: %s", err)
 	}
-
-	fmt.Print(col2)
 
 	// duraBucket := bucket.WithDurability(1, 0)
 	// duraCol := duraBucket.DefaultCollection()
