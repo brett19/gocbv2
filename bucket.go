@@ -11,6 +11,7 @@ func newBucket(c *Cluster, bucketName string) *Bucket {
 			clientStateBlock: clientStateBlock{
 				BucketName: bucketName,
 			},
+			tracer: c.sb.tracer,
 		},
 	}
 }

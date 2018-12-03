@@ -1,11 +1,13 @@
 package gocb
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"sync"
 	"time"
 
+	opentracing "github.com/opentracing/opentracing-go"
 	gocbcore "gopkg.in/couchbase/gocbcore.v7"
 )
 
@@ -63,6 +65,7 @@ func newCollection(scope *Scope, collectionName string) *Collection {
 		csb: &collectionStateBlock{},
 	}
 	collection.sb.CollectionName = collectionName
+	collection.sb.KvTimeout = 10 * time.Second
 	collection.sb.recacheClient()
 	return collection
 }
@@ -145,4 +148,20 @@ func (c *Collection) WithMutationTokens() *Collection {
 	n.sb.UseMutationTokens = true
 	n.sb.recacheClient()
 	return n
+}
+
+func (c *Collection) startKvOpTrace(ctx context.Context, operationName string) opentracing.Span {
+	var span opentracing.Span
+	parentctx, _ := ctx.Value(TracerSpanCtxKey{}).(opentracing.SpanContext)
+	if parentctx == nil {
+		span = c.sb.tracer.StartSpan("Read",
+			opentracing.Tag{Key: "couchbase.collection", Value: c.sb.CollectionName},
+			opentracing.Tag{Key: "couchbase.service", Value: "kv"})
+	} else {
+		span = c.sb.tracer.StartSpan("Read",
+			opentracing.Tag{Key: "couchbase.collection", Value: c.sb.CollectionName},
+			opentracing.Tag{Key: "couchbase.service", Value: "kv"}, opentracing.ChildOf(parentctx))
+	}
+
+	return span
 }

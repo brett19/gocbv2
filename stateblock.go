@@ -3,6 +3,8 @@ package gocb
 import (
 	"fmt"
 	"time"
+
+	opentracing "github.com/opentracing/opentracing-go"
 )
 
 type clientStateBlock struct {
@@ -24,6 +26,10 @@ type collectionStateBlock struct {
 	ScopeUnknown          bool
 }
 
+type servicesStateBlock struct {
+	n1qlTimeout time.Duration
+}
+
 type stateBlock struct {
 	cluster      *Cluster
 	cachedClient *client
@@ -33,9 +39,13 @@ type stateBlock struct {
 	ScopeName      string
 	CollectionName string
 
+	tracer opentracing.Tracer
+
 	KvTimeout   time.Duration
 	PersistTo   uint
 	ReplicateTo uint
+
+	N1qlRetryBehavior RetryBehavior
 }
 
 func (sb *stateBlock) getClient() *client {

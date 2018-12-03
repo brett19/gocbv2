@@ -49,6 +49,7 @@ func (c *client) getAgent() (*gocbcore.Agent, error) {
 		UseDurations:         true,
 		NoRootTraceSpans:     true,
 		UseCollections:       true,
+		UseEnhancedErrors:    true,
 	}
 
 	config.BucketName = c.state.BucketName
