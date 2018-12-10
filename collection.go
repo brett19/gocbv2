@@ -1,8 +1,6 @@
 package gocb
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"sync"
 	"time"
@@ -11,13 +9,31 @@ import (
 	gocbcore "gopkg.in/couchbase/gocbcore.v7"
 )
 
-type Collection struct {
+type Collection interface {
+	// Name() string
+	Get(id string, spec *GetSpec, opts *GetOptions) (*GetResult, error)
+	// Append(id string, val interface{}, opts *AppendOptions) (*MutationResult, error)
+	// Prepend(id string, val interface{}, opts *PrependOptions) (*MutationResult, error)
+	// Touch(id string, opts *TouchOptions) (*MutationResult, error)
+	// Unlock(id string, opts *UnlockOptions) (*MutationResult, error)
+	// Increment(id string, opts *IncrementOptions) (*MutationResult, error)
+	// Decrement(id string, opts *DecrementOptions) (*MutationResult, error)
+	Upsert(id string, val interface{}, opts *UpsertOptions) (*MutationResult, error)
+	Insert(id string, val interface{}, opts *InsertOptions) (*MutationResult, error)
+	Replace(id string, val interface{}, opts *ReplaceOptions) (*MutationResult, error)
+	Remove(id string, opts *RemoveOptions) (*MutationResult, error)
+	Mutate(id string, spec MutateSpec, opts *MutateOptions) (*MutationResult, error)
+
+	SetKvTimeout(duration time.Duration) Collection
+}
+
+type StdCollection struct {
 	sb   stateBlock
 	csb  *collectionStateBlock
 	lock sync.Mutex
 }
 
-func (c *Collection) setCollectionID(scopeID uint32, collectionID uint32) error {
+func (c *StdCollection) setCollectionID(scopeID uint32, collectionID uint32) error {
 	if c.initialized() {
 		return errors.New("collection already initialized")
 	}
@@ -31,37 +47,37 @@ func (c *Collection) setCollectionID(scopeID uint32, collectionID uint32) error 
 	return nil
 }
 
-func (c *Collection) collectionID() uint32 {
+func (c *StdCollection) collectionID() uint32 {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	return c.csb.CollectionID
 }
 
-func (c *Collection) initialized() bool {
+func (c *StdCollection) initialized() bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	return c.csb.CollectionInitialized
 }
 
-func (c *Collection) setCollectionUnknown() {
+func (c *StdCollection) setCollectionUnknown() {
 	c.csb.CollectionUnknown = true
 }
 
-func (c *Collection) setScopeUnknown() {
+func (c *StdCollection) setScopeUnknown() {
 	c.csb.ScopeUnknown = true
 }
 
-func (c *Collection) scopeUnknown() bool {
+func (c *StdCollection) scopeUnknown() bool {
 	return c.csb.ScopeUnknown
 }
 
-func (c *Collection) collectionUnknown() bool {
+func (c *StdCollection) collectionUnknown() bool {
 	return c.csb.CollectionUnknown
 }
 
-func newCollection(scope *Scope, collectionName string) *Collection {
-	collection := &Collection{
-		sb:  scope.sb,
+func newCollection(scope Scope, collectionName string) Collection {
+	collection := &StdCollection{
+		sb:  scope.stateBlock(),
 		csb: &collectionStateBlock{},
 	}
 	collection.sb.CollectionName = collectionName
@@ -70,30 +86,12 @@ func newCollection(scope *Scope, collectionName string) *Collection {
 	return collection
 }
 
-func (c *Collection) clone() *Collection {
+func (c *StdCollection) clone() *StdCollection {
 	newC := *c
 	return &newC
 }
 
-func (c *Collection) transcodeDocument(doc Document) (Document, error) {
-	if doc.value != nil {
-		docBytes, err := json.Marshal(doc.value)
-		if err != nil {
-			return Document{}, err
-		}
-
-		doc.bytes = docBytes
-		doc.value = nil
-	}
-
-	if doc.bytes == nil {
-		return Document{}, errors.New("invalid document value")
-	}
-
-	return doc, nil
-}
-
-func (c *Collection) getAgentAndCollection() (uint32, *gocbcore.Agent, error) {
+func (c *StdCollection) getAgentAndCollection() (uint32, *gocbcore.Agent, error) {
 	client := c.sb.getClient()
 	agent, err := client.getAgent()
 	if err != nil {
@@ -128,7 +126,7 @@ func (c *Collection) getAgentAndCollection() (uint32, *gocbcore.Agent, error) {
 	return collectionID, agent, nil
 }
 
-func (c *Collection) WithDurability(persistTo, replicateTo uint) *Collection {
+func (c *StdCollection) WithDurability(persistTo, replicateTo uint) *StdCollection {
 	n := c.clone()
 	n.sb.PersistTo = persistTo
 	n.sb.ReplicateTo = replicateTo
@@ -136,32 +134,36 @@ func (c *Collection) WithDurability(persistTo, replicateTo uint) *Collection {
 	return n
 }
 
-func (c *Collection) WithOperationTimeout(duration time.Duration) *Collection {
+func (c *StdCollection) WithOperationTimeout(duration time.Duration) *StdCollection {
 	n := c.clone()
 	n.sb.KvTimeout = duration
 	n.sb.recacheClient()
 	return n
 }
 
-func (c *Collection) WithMutationTokens() *Collection {
+func (c *StdCollection) WithMutationTokens() *StdCollection {
 	n := c.clone()
 	n.sb.UseMutationTokens = true
 	n.sb.recacheClient()
 	return n
 }
 
-func (c *Collection) startKvOpTrace(ctx context.Context, operationName string) opentracing.Span {
+func (c *StdCollection) startKvOpTrace(parentSpanCtx opentracing.SpanContext, operationName string) opentracing.Span {
 	var span opentracing.Span
-	parentctx, _ := ctx.Value(TracerSpanCtxKey{}).(opentracing.SpanContext)
-	if parentctx == nil {
+	if parentSpanCtx == nil {
 		span = c.sb.tracer.StartSpan("Read",
 			opentracing.Tag{Key: "couchbase.collection", Value: c.sb.CollectionName},
 			opentracing.Tag{Key: "couchbase.service", Value: "kv"})
 	} else {
 		span = c.sb.tracer.StartSpan("Read",
 			opentracing.Tag{Key: "couchbase.collection", Value: c.sb.CollectionName},
-			opentracing.Tag{Key: "couchbase.service", Value: "kv"}, opentracing.ChildOf(parentctx))
+			opentracing.Tag{Key: "couchbase.service", Value: "kv"}, opentracing.ChildOf(parentSpanCtx))
 	}
 
 	return span
+}
+
+func (c *StdCollection) SetKvTimeout(duration time.Duration) Collection {
+	c.sb.KvTimeout = duration
+	return c
 }

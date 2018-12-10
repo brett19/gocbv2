@@ -1,49 +1,60 @@
 package gocb
 
-type Bucket struct {
+type Bucket interface {
+	Name() string
+	Scope(scopeName string) Scope
+	DefaultCollection() Collection
+	Collection(scopeName string, collectionName string) Collection
+	// ViewQuery(designDoc string, viewName string, opts *ViewOptions) (ViewResult, error)
+	// GetManager() *BucketManager
+	stateBlock() stateBlock
+}
+
+type StdBucket struct {
 	sb stateBlock
 }
 
-func newBucket(c *Cluster, bucketName string) *Bucket {
-	return &Bucket{
+func newBucket(c Cluster, bucketName string) Bucket {
+	return &StdBucket{
 		sb: stateBlock{
 			cluster: c,
 			clientStateBlock: clientStateBlock{
 				BucketName: bucketName,
 			},
-			tracer: c.sb.tracer,
+			tracer: c.Tracer(),
 		},
 	}
 }
 
-func (b *Bucket) clone() *Bucket {
+func (b *StdBucket) clone() *StdBucket {
 	newB := *b
 	return &newB
 }
 
-func (b *Bucket) WithDurability(persistTo, replicateTo uint) *Bucket {
-	n := b.clone()
-	n.sb.PersistTo = persistTo
-	n.sb.ReplicateTo = replicateTo
-	return n
+func (b *StdBucket) Name() string {
+	return b.sb.BucketName
 }
 
-func (b *Bucket) Scope(scopeName string) *Scope {
+func (b *StdBucket) Scope(scopeName string) Scope {
 	return newScope(b, scopeName)
 }
 
-func (b *Bucket) DefaultScope() *Scope {
+func (b *StdBucket) DefaultScope() Scope {
 	return b.Scope("_default")
 }
 
-func (b *Bucket) Collection(collectionName string) *Collection {
-	return b.DefaultScope().Collection(collectionName)
+func (b *StdBucket) Collection(scopeName string, collectionName string) Collection {
+	return b.Scope(scopeName).Collection(collectionName)
 }
 
-func (b *Bucket) DefaultCollection() *Collection {
+func (b *StdBucket) DefaultCollection() Collection {
 	return b.DefaultScope().DefaultCollection()
 }
 
-func (b *Bucket) Views() *ViewsManager {
+func (b *StdBucket) Views() *ViewsManager {
 	return newViewsManager(b)
+}
+
+func (b *StdBucket) stateBlock() stateBlock {
+	return b.sb
 }

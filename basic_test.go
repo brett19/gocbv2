@@ -14,9 +14,10 @@ type details struct {
 	MiddleNames []string `json:"middleNames"`
 }
 
-var globalCollection *Collection
+var globalCollection Collection
 
 func TestMain(m *testing.M) {
+	SetLogger(VerboseStdioLogger())
 	auth := PasswordAuthenticator{
 		Username: "Administrator",
 		Password: "password",
@@ -24,12 +25,12 @@ func TestMain(m *testing.M) {
 
 	cluster, err := Connect("couchbase://10.112.192.101", auth)
 	if err != nil {
-		fmt.Errorf("Failed to connect to cluster: %s", err.Error())
+		panic("Failed to connect to cluster: " + err.Error())
 	}
 
 	bucket := cluster.Bucket("test")
 	globalCollection = bucket.DefaultCollection()
-	globalCollection.sb.KvTimeout = 2 * time.Second
+	globalCollection.SetKvTimeout(2 * time.Minute)
 
 	os.Exit(m.Run())
 }
@@ -40,33 +41,36 @@ func TestScenarioA(t *testing.T) {
 		Id:   32,
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second) // This for the entire operations set for the scenario
-	// ctx = context.WithValue(ctx, TracerSpanCtxKey{}, myTracerSpan)
-	res, err := globalCollection.Upsert("scenarioa", val, &SetOptions{
+	ctx, _ := context.WithTimeout(context.Background(), 30*time.Second) // This for the entire operations set for the scenario
+	res, err := globalCollection.Upsert("scenarioa", val, &UpsertOptions{
 		Context:  ctx,
 		Encode:   DefaultEncode, // if missing DefaultEncode will be used anyways...
 		ExpireAt: time.Now().Add(1 * time.Minute),
-		Timeout:  500 * time.Millisecond,
+		Timeout:  30000 * time.Millisecond,
+		// ParentSpanContext: mytrace.Context(),
 	})
 	if err != nil {
+		if IsTimeoutError(err) {
+			t.Fatalf("Failed to fetch key, timeout: %s", err)
+		}
 		t.Fatalf("Failed to upsert key: %s", err)
 	}
 	fmt.Printf("Upsert result: %+v\n", res)
 
-	doc, err := globalCollection.Get("scenarioa", &GetOptions{WithExpiry: true, Context: ctx})
+	doc, err := globalCollection.Get("scenarioa", nil, &GetOptions{WithExpiry: true, Context: ctx})
 	if err != nil {
 		t.Fatalf("Failed to fetch key: %s", err)
 	}
 	fmt.Printf("Get result: %+v\n", doc)
 
 	var retVal details
-	err = doc.ContentAs(&retVal)
+	err = doc.Content(&retVal)
 	if err != nil {
 		t.Fatalf("Failed to extract: %s", err)
 	}
 	fmt.Printf("Content result: %+v\n", retVal)
 
-	err = doc.DecodeAs(&retVal, DefaultDecode) //will default to use defaultdecode anyway
+	err = doc.Decode(&retVal, DefaultDecode) //will default to use defaultdecode anyway
 	if err != nil {
 		t.Fatalf("Failed to extract: %s", err)
 	}
@@ -104,17 +108,18 @@ func TestScenarioB(t *testing.T) {
 	}
 	fmt.Printf("Upsert result: %+v\n", res)
 
-	docProj, err := globalCollection.LookupIn("scenariob", LookupSpec{}.Get("middleNames"), &LookupOptions{})
+	spec := GetSpec{}.Get("middleNames")
+	doc, err := globalCollection.Get("scenariob", &spec, &GetOptions{})
 	if err != nil {
 		t.Fatalf("Failed to extract: %s", err)
 	}
 	var middleNames []string
-	docProj.Content("middleNames").As(&middleNames)
+	doc.ContentAt("middleNames", &middleNames)
 	fmt.Printf("Lookup result %+v\n", middleNames)
 
 	middleNames = append(middleNames, "James")
 
-	mutRes, err := globalCollection.MutateIn("scenariob", MutateSpec{}.Replace("middleNames", middleNames), &MutateOptions{})
+	mutRes, err := globalCollection.Mutate("scenariob", MutateSpec{}.Replace("middleNames", middleNames), &MutateOptions{})
 	if err != nil {
 		t.Fatalf("Failed to extract: %s", err)
 	}
@@ -129,9 +134,9 @@ func TestScenarioB(t *testing.T) {
 
 func TestScenarioC(t *testing.T) {
 	// Would need a check to ensure both types of durability can't be set at once if we go this route
-	globalCollection.Upsert("scenarioc", struct{}{}, &SetOptions{ReplicateTo: 2, PersistTo: 1})
+	globalCollection.Upsert("scenarioc", struct{}{}, &UpsertOptions{ReplicateTo: 2, PersistTo: 1})
 
-	globalCollection.Upsert("scenarioc", struct{}{}, &SetOptions{WithDurability: DurabilityLevelMajorityAndPersistActive})
+	globalCollection.Upsert("scenarioc", struct{}{}, &UpsertOptions{WithDurability: DurabilityLevelMajorityAndPersistActive})
 }
 
 func TestScenarioD(t *testing.T) {
@@ -141,13 +146,13 @@ func TestScenarioD(t *testing.T) {
 	}
 
 	for {
-		doc, err := globalCollection.Get("scenariod", nil)
+		doc, err := globalCollection.Get("scenariod", nil, nil)
 		if err != nil {
 			t.Fatalf("Failed to fetch key: %s", err)
 		}
 
 		var thing details
-		err = doc.ContentAs(&thing)
+		err = doc.Content(&thing)
 		if err != nil {
 			t.Fatalf("Failed to fetch key: %s", err)
 		}

@@ -2,7 +2,6 @@ package gocb
 
 import (
 	"fmt"
-	"strings"
 
 	"gopkg.in/couchbase/gocbcore.v7"
 
@@ -22,13 +21,13 @@ type retryAbleError interface {
 	isRetryable() bool
 }
 
-type QueryError struct {
-	errors     []n1qlError
-	HTTPStatus uint16
-	ContextId  string
-	Endpoint   string
-	Payload    interface{}
-}
+// type QueryError struct {
+// 	errors     []n1qlError
+// 	HTTPStatus uint16
+// 	ContextId  string
+// 	Endpoint   string
+// 	Payload    interface{}
+// }
 
 type KvError struct {
 	err error
@@ -44,30 +43,48 @@ func IsCasMismatch(err error) bool {
 }
 
 func (err KvError) Error() string {
-	return err.Error()
+	return err.err.Error()
 }
 
 func (err KvError) Cause() error {
 	return err.err
 }
 
-func (qe QueryError) isRetryable() bool {
-	for _, n1qlErr := range qe.errors {
-		if n1qlErr.Code == 4050 || n1qlErr.Code == 4070 || n1qlErr.Code == 5000 {
-			return true
-		}
+// TimeoutError occurs when an operation times out
+type TimeoutError struct {
+	err error
+}
+
+func (err TimeoutError) Error() string {
+	return err.err.Error()
+}
+
+func IsTimeoutError(err error) bool {
+	cause := errors.Cause(err)
+	if _, ok := cause.(TimeoutError); ok {
+		return true
 	}
 
 	return false
 }
 
-func (qe QueryError) Error() string {
-	var errors []string
-	for _, err := range qe.errors {
-		errors = append(errors, err.Error())
-	}
-	return strings.Join(errors, ", ")
-}
+// func (qe QueryError) isRetryable() bool {
+// 	for _, n1qlErr := range qe.errors {
+// 		if n1qlErr.Code == 4050 || n1qlErr.Code == 4070 || n1qlErr.Code == 5000 {
+// 			return true
+// 		}
+// 	}
+
+// 	return false
+// }
+
+// func (qe QueryError) Error() string {
+// 	var errors []string
+// 	for _, err := range qe.errors {
+// 		errors = append(errors, err.Error())
+// 	}
+// 	return strings.Join(errors, ", ")
+// }
 
 func isRetryableError(err error) bool {
 	switch errType := errors.Cause(err).(type) {

@@ -15,27 +15,73 @@ import (
 // TODO: Need to handle timeouts here.  It might be neccessary to move
 // timeout handling down into gocbcore, but that is still uncertain.
 
-type SetOptions struct {
-	Context        context.Context
-	ExpireAt       time.Time
-	Encode         Encode
-	PersistTo      uint
-	ReplicateTo    uint
-	Timeout        time.Duration
-	WithDurability DurabilityLevel
+type kvOperator interface {
+	SetEx(gocbcore.AddOptions, gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
 }
 
-func (c *Collection) Insert(key string, val interface{}, opts *SetOptions) (mutOut *MutationResult, errOut error) {
+func shortestTime(first, second time.Time) time.Time {
+	if first.IsZero() {
+		return second
+	}
+	if second.IsZero() || first.Before(second) {
+		return first
+	}
+	return second
+}
+
+func (c *StdCollection) deadline(ctx context.Context, now time.Time, opTimeout time.Duration) (earliest time.Time) {
+	if opTimeout > 0 {
+		earliest = now.Add(opTimeout)
+	}
+	if d, ok := ctx.Deadline(); ok {
+		earliest = shortestTime(earliest, d)
+	}
+	return shortestTime(earliest, now.Add(c.sb.KvTimeout))
+}
+
+// UpsertOptions are options that can be applied to an Upsert operation.
+type UpsertOptions struct {
+	ParentSpanContext opentracing.SpanContext
+	Timeout           time.Duration
+	Context           context.Context
+	ExpireAt          time.Time
+	Encode            Encode
+	PersistTo         uint
+	ReplicateTo       uint
+	WithDurability    DurabilityLevel
+}
+
+// InsertOptions are options that can be applied to an Insert operation.
+type InsertOptions struct {
+	ParentSpanContext opentracing.SpanContext
+	Timeout           time.Duration
+	Context           context.Context
+	ExpireAt          time.Time
+	Encode            Encode
+	PersistTo         uint
+	ReplicateTo       uint
+	WithDurability    DurabilityLevel
+}
+
+// Insert creates a new document in the Collection.
+func (c *StdCollection) Insert(key string, val interface{}, opts *InsertOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
-		opts = &SetOptions{}
+		opts = &InsertOptions{}
 	}
-	if opts.Context == nil {
-		opts.Context = context.Background()
+	deadlinedCtx := opts.Context
+	if deadlinedCtx == nil {
+		deadlinedCtx = context.Background()
 	}
-	if opts.Encode == nil {
-		opts.Encode = DefaultEncode
+
+	d := c.deadline(deadlinedCtx, time.Now(), opts.Timeout)
+	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
+	defer cancel()
+
+	encodeFn := opts.Encode
+	if encodeFn == nil {
+		encodeFn = DefaultEncode
 	}
-	span := c.startKvOpTrace(opts.Context, "Insert")
+	span := c.startKvOpTrace(opts.ParentSpanContext, "Insert")
 	defer span.Finish()
 
 	var expiry uint32
@@ -54,19 +100,19 @@ func (c *Collection) Insert(key string, val interface{}, opts *SetOptions) (mutO
 
 	log.Printf("Transcoding")
 
-	bytes, flags, err := opts.Encode(val)
+	bytes, flags, err := encodeFn(val)
 	if err != nil {
 		return nil, err
 	}
 
 	waitCh := make(chan struct{})
-
 	op, err := agent.AddEx(gocbcore.AddOptions{
 		Key:          []byte(key),
 		CollectionID: collectionID,
 		Value:        bytes,
 		Flags:        flags,
 		Expiry:       expiry,
+		TraceContext: span.Context(),
 	}, func(res *gocbcore.StoreResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
@@ -93,40 +139,45 @@ func (c *Collection) Insert(key string, val interface{}, opts *SetOptions) (mutO
 		return
 	}
 
-	timeout := opts.Timeout
-	if timeout > c.sb.KvTimeout || timeout == 0 {
-		timeout = c.sb.KvTimeout
-	}
-	timeoutTmr := gocbcore.AcquireTimer(timeout)
 	select {
-	case <-opts.Context.Done():
-		gocbcore.ReleaseTimer(timeoutTmr, false)
-		op.Cancel()
-		errOut = opts.Context.Err()
-		return
-	case <-timeoutTmr.C:
-		gocbcore.ReleaseTimer(timeoutTmr, true)
-		op.Cancel()
-		// errOut = ErrTimeout
-		return
+	case <-deadlinedCtx.Done():
+		if op.Cancel() {
+			if err == context.DeadlineExceeded {
+				errOut = TimeoutError{err: err}
+			} else {
+				errOut = deadlinedCtx.Err()
+			}
+		} else {
+			<-waitCh
+		}
 	case <-waitCh:
-		gocbcore.ReleaseTimer(timeoutTmr, false)
 	}
 
 	return
 }
 
-func (c *Collection) Upsert(key string, val interface{}, opts *SetOptions) (mutOut *MutationResult, errOut error) {
+// Upsert creates a new document in the Collection if it does not exist, if it does exist then it updates it.
+func (c *StdCollection) Upsert(key string, val interface{}, opts *UpsertOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
-		opts = &SetOptions{}
+		opts = &UpsertOptions{}
 	}
 	if opts.Context == nil {
 		opts.Context = context.Background()
 	}
+
+	deadlinedCtx := opts.Context
+	if deadlinedCtx == nil {
+		deadlinedCtx = context.Background()
+	}
+
+	d := c.deadline(deadlinedCtx, time.Now(), opts.Timeout)
+	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
+	defer cancel()
+
 	if opts.Encode == nil {
 		opts.Encode = DefaultEncode
 	}
-	span := c.startKvOpTrace(opts.Context, "Upsert")
+	span := c.startKvOpTrace(opts.ParentSpanContext, "Upsert")
 	defer span.Finish()
 
 	var expiry uint32
@@ -160,6 +211,7 @@ func (c *Collection) Upsert(key string, val interface{}, opts *SetOptions) (mutO
 		Value:        bytes,
 		Flags:        flags,
 		Expiry:       expiry,
+		TraceContext: span.Context(),
 	}, func(res *gocbcore.StoreResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
@@ -186,51 +238,56 @@ func (c *Collection) Upsert(key string, val interface{}, opts *SetOptions) (mutO
 		return
 	}
 
-	timeout := opts.Timeout
-	if timeout > c.sb.KvTimeout || timeout == 0 {
-		timeout = c.sb.KvTimeout
-	}
-	timeoutTmr := gocbcore.AcquireTimer(timeout)
 	select {
-	case <-opts.Context.Done():
-		gocbcore.ReleaseTimer(timeoutTmr, false)
-		op.Cancel()
-		errOut = opts.Context.Err()
-		return
-	case <-timeoutTmr.C:
-		gocbcore.ReleaseTimer(timeoutTmr, true)
-		op.Cancel()
-		// errOut = ErrTimeout
-		return
+	case <-deadlinedCtx.Done():
+		if op.Cancel() {
+			err := deadlinedCtx.Err()
+			if err == context.DeadlineExceeded {
+				errOut = TimeoutError{err: err}
+			} else {
+				errOut = err
+			}
+		} else {
+			<-waitCh
+		}
 	case <-waitCh:
-		gocbcore.ReleaseTimer(timeoutTmr, false)
 	}
 
 	return
 }
 
+// ReplaceOptions are the options available to a Replace operation
 type ReplaceOptions struct {
-	Context        context.Context
-	ExpireAt       time.Time
-	Cas            Cas
-	Encode         Encode
-	PersistTo      uint
-	ReplicateTo    uint
-	Timeout        time.Duration
-	WithDurability DurabilityLevel
+	ParentSpanContext opentracing.SpanContext
+	Timeout           time.Duration
+	Context           context.Context
+	ExpireAt          time.Time
+	Cas               Cas
+	Encode            Encode
+	PersistTo         uint
+	ReplicateTo       uint
+	WithDurability    DurabilityLevel
 }
 
-func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) (mutOut *MutationResult, errOut error) {
+// Replace updates a document in the collection
+func (c *StdCollection) Replace(key string, val interface{}, opts *ReplaceOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &ReplaceOptions{}
 	}
-	if opts.Context == nil {
-		opts.Context = context.Background()
+
+	deadlinedCtx := opts.Context
+	if deadlinedCtx == nil {
+		deadlinedCtx = context.Background()
 	}
+
+	d := c.deadline(deadlinedCtx, time.Now(), opts.Timeout)
+	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
+	defer cancel()
+
 	if opts.Encode == nil {
 		opts.Encode = DefaultEncode
 	}
-	span := c.startKvOpTrace(opts.Context, "Replace")
+	span := c.startKvOpTrace(opts.ParentSpanContext, "Replace")
 	defer span.Finish()
 
 	var expiry uint32
@@ -290,71 +347,136 @@ func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) 
 		return
 	}
 
-	timeout := opts.Timeout
-	if timeout > c.sb.KvTimeout || timeout == 0 {
-		timeout = c.sb.KvTimeout
-	}
-	timeoutTmr := gocbcore.AcquireTimer(timeout)
 	select {
-	case <-opts.Context.Done():
-		gocbcore.ReleaseTimer(timeoutTmr, false)
-		op.Cancel()
-		errOut = opts.Context.Err()
-		return
-	case <-timeoutTmr.C:
-		gocbcore.ReleaseTimer(timeoutTmr, true)
-		op.Cancel()
-		// errOut = ErrTimeout
-		return
+	case <-deadlinedCtx.Done():
+		if op.Cancel() {
+			if err == context.DeadlineExceeded {
+				errOut = TimeoutError{err: err}
+			} else {
+				errOut = deadlinedCtx.Err()
+			}
+		} else {
+			<-waitCh
+		}
 	case <-waitCh:
-		gocbcore.ReleaseTimer(timeoutTmr, false)
 	}
 
 	return
 }
 
+// GetOptions are the options available to a Get operation
 type GetOptions struct {
-	Context    context.Context
-	WithExpiry bool
-	Timeout    time.Duration
+	ParentSpanContext opentracing.SpanContext
+	Timeout           time.Duration
+	Context           context.Context
+	WithExpiry        bool
 }
 
-type getResult struct {
-	doc *Document
-	err error
+type GetSpec struct {
+	ops   []gocbcore.SubDocOp
+	flags gocbcore.SubdocDocFlag
 }
 
-func (c *Collection) Get(key string, opts *GetOptions) (docOut *Document, errOut error) {
+func (spec GetSpec) Get(path string) GetSpec {
+	return spec.GetWithFlags(path, SubdocFlagNone)
+}
+
+func (spec GetSpec) GetWithFlags(path string, flags SubdocFlag) GetSpec {
+	if path == "" {
+		op := gocbcore.SubDocOp{
+			Op:    gocbcore.SubDocOpGetDoc,
+			Flags: gocbcore.SubdocFlag(flags),
+		}
+		spec.ops = append(spec.ops, op)
+		return spec
+	}
+
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpGet,
+		Path:  path,
+		Flags: gocbcore.SubdocFlag(flags),
+	}
+	spec.ops = append(spec.ops, op)
+	return spec
+}
+
+func (f GetSpec) Exists(path string) GetSpec {
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpExists,
+		Path:  path,
+		Flags: gocbcore.SubdocFlagNone,
+	}
+	f.ops = append(f.ops, op)
+
+	return f
+}
+
+func (f GetSpec) Count(path string) GetSpec {
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpGetCount,
+		Path:  path,
+		Flags: gocbcore.SubdocFlagNone,
+	}
+	f.ops = append(f.ops, op)
+
+	return f
+}
+
+func (c *StdCollection) Get(key string, spec *GetSpec, opts *GetOptions) (docOut *GetResult, errOut error) {
 	if opts == nil {
 		opts = &GetOptions{}
 	}
-	if opts.Context == nil {
-		opts.Context = context.Background()
-	}
-	span := c.startKvOpTrace(opts.Context, "Get")
-	defer span.Finish()
-	ctx := context.WithValue(opts.Context, TracerSpanCtxKey{}, span.Context())
 
-	if opts.WithExpiry {
-		spec := LookupSpec{}.GetWithFlags("$document.exptime", SubdocFlagXattr).Get("")
-		lookin, err := c.LookupIn(key, spec, &LookupOptions{Context: ctx})
-		if err != nil {
-			errOut = err
+	deadlinedCtx := opts.Context
+	if deadlinedCtx == nil {
+		deadlinedCtx = context.Background()
+	}
+
+	d := c.deadline(deadlinedCtx, time.Now(), opts.Timeout)
+	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
+	defer cancel()
+
+	span := c.startKvOpTrace(opts.ParentSpanContext, "Get")
+	defer span.Finish()
+
+	if spec == nil {
+		if opts.WithExpiry {
+			expSpec := GetSpec{}.GetWithFlags("$document.exptime", SubdocFlagXattr).Get("")
+			lookin, err := c.lookupIn(deadlinedCtx, span.Context(), key, expSpec, opts)
+			if err != nil {
+				errOut = err
+				return
+			}
+			var partialBytes []byte
+			err = lookin.ContentByIndex(1, &partialBytes)
+			if err != nil {
+				errOut = err
+				return
+			}
+			doc := &GetResult{
+				id:       key,
+				contents: []getPartial{getPartial{bytes: partialBytes}},
+				flags:    lookin.flags,
+				cas:      Cas(lookin.cas),
+			}
+			err = lookin.ContentByIndex(0, &doc.expireAt)
+			if err != nil {
+				errOut = err
+				return
+			}
+			docOut = doc
 			return
 		}
-		doc := &Document{}
-		lookin.ContentByIndex(0).As(&doc.expireAt)
-		doc.bytes = lookin.ContentByIndex(1).data
-		doc.cas = lookin.cas
-		docOut = doc
+
+		docOut, errOut = c.get(deadlinedCtx, span.Context(), key, opts)
 		return
 	}
+	docOut, errOut = c.lookupIn(deadlinedCtx, span.Context(), key, *spec, opts)
 
-	docOut, errOut = c.get(ctx, key, opts)
 	return
 }
 
-func (c *Collection) get(ctx context.Context, key string, opts *GetOptions) (docOut *Document, errOut error) {
+func (c *StdCollection) get(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts *GetOptions) (docOut *GetResult, errOut error) {
 	collectionID, agent, err := c.getAgentAndCollection()
 	if err != nil {
 		return nil, err
@@ -364,7 +486,7 @@ func (c *Collection) get(ctx context.Context, key string, opts *GetOptions) (doc
 	op, err := agent.GetEx(gocbcore.GetOptions{
 		Key:          []byte(key),
 		CollectionID: collectionID,
-		TraceContext: ctx.Value(TracerSpanCtxKey{}).(opentracing.SpanContext),
+		TraceContext: traceCtx,
 	}, func(res *gocbcore.GetResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
@@ -375,11 +497,12 @@ func (c *Collection) get(ctx context.Context, key string, opts *GetOptions) (doc
 			waitCh <- struct{}{}
 			return
 		}
-		var doc *Document
 		if res != nil {
-			doc = &Document{
-				id:    key,
-				bytes: res.Value,
+			doc := &GetResult{
+				id: key,
+				contents: []getPartial{
+					getPartial{bytes: res.Value, path: ""},
+				},
 				flags: res.Flags,
 				cas:   Cas(res.Cas),
 			}
@@ -393,47 +516,46 @@ func (c *Collection) get(ctx context.Context, key string, opts *GetOptions) (doc
 		return nil, err
 	}
 
-	timeout := opts.Timeout
-	if timeout > c.sb.KvTimeout || timeout == 0 {
-		timeout = c.sb.KvTimeout
-	}
-	timeoutTmr := gocbcore.AcquireTimer(timeout)
 	select {
-	case <-opts.Context.Done():
-		gocbcore.ReleaseTimer(timeoutTmr, false)
-		op.Cancel()
-		errOut = opts.Context.Err()
-		return
-	case <-timeoutTmr.C:
-		gocbcore.ReleaseTimer(timeoutTmr, true)
-		op.Cancel()
-		// errOut = ErrTimeout
-		return
+	case <-ctx.Done():
+		if op.Cancel() {
+			if err == context.DeadlineExceeded {
+				errOut = TimeoutError{err: err}
+			} else {
+				errOut = ctx.Err()
+			}
+		} else {
+			<-waitCh
+		}
 	case <-waitCh:
-		gocbcore.ReleaseTimer(timeoutTmr, false)
 	}
 
 	return
 }
 
 type RemoveOptions struct {
-	Context        context.Context
-	Cas            Cas
-	PersistTo      uint
-	ReplicateTo    uint
-	Timeout        time.Duration
-	WithDurability DurabilityLevel
+	ParentSpanContext opentracing.SpanContext
+	Timeout           time.Duration
+	Context           context.Context
+	Cas               Cas
+	PersistTo         uint
+	ReplicateTo       uint
+	WithDurability    DurabilityLevel
 }
 
-func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationResult, errOut error) {
+func (c *StdCollection) Remove(key string, opts *RemoveOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &RemoveOptions{}
 	}
-	if opts.Context == nil {
-		opts.Context = context.Background()
+
+	deadlinedCtx := opts.Context
+	if deadlinedCtx == nil {
+		deadlinedCtx = context.Background()
 	}
-	span := c.startKvOpTrace(opts.Context, "Remove")
-	defer span.Finish()
+
+	d := c.deadline(deadlinedCtx, time.Now(), opts.Timeout)
+	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
+	defer cancel()
 
 	collectionID, agent, err := c.getAgentAndCollection()
 	if err != nil {
@@ -446,7 +568,7 @@ func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationRe
 		Key:          []byte(key),
 		CollectionID: collectionID,
 		Cas:          gocbcore.Cas(opts.Cas),
-		TraceContext: span.Context(),
+		TraceContext: opts.ParentSpanContext,
 	}, func(res *gocbcore.DeleteResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
@@ -473,92 +595,25 @@ func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationRe
 		return
 	}
 
-	timeout := opts.Timeout
-	if timeout > c.sb.KvTimeout || timeout == 0 {
-		timeout = c.sb.KvTimeout
-	}
-	timeoutTmr := gocbcore.AcquireTimer(timeout)
 	select {
-	case <-opts.Context.Done():
-		gocbcore.ReleaseTimer(timeoutTmr, false)
-		op.Cancel()
-		errOut = opts.Context.Err()
-		return
-	case <-timeoutTmr.C:
-		gocbcore.ReleaseTimer(timeoutTmr, true)
-		op.Cancel()
-		// errOut = ErrTimeout
-		return
+	case <-deadlinedCtx.Done():
+		if op.Cancel() {
+			if err == context.DeadlineExceeded {
+				errOut = TimeoutError{err: err}
+			} else {
+				errOut = deadlinedCtx.Err()
+			}
+		} else {
+			<-waitCh
+		}
 	case <-waitCh:
-		gocbcore.ReleaseTimer(timeoutTmr, false)
 	}
 
 	return
 }
 
-type LookupSpec struct {
-	ops   []gocbcore.SubDocOp
-	flags gocbcore.SubdocDocFlag
-}
-
-type LookupOptions struct {
-	Context context.Context
-	Timeout time.Duration
-}
-
-func (spec LookupSpec) Get(path string) LookupSpec {
-	return spec.GetWithFlags(path, SubdocFlagNone)
-}
-
-func (spec LookupSpec) GetWithFlags(path string, flags SubdocFlag) LookupSpec {
-	if path == "" {
-		op := gocbcore.SubDocOp{
-			Op:    gocbcore.SubDocOpGetDoc,
-			Flags: gocbcore.SubdocFlag(flags),
-		}
-		spec.ops = append(spec.ops, op)
-		return spec
-	}
-
-	op := gocbcore.SubDocOp{
-		Op:    gocbcore.SubDocOpGet,
-		Path:  path,
-		Flags: gocbcore.SubdocFlag(flags),
-	}
-	spec.ops = append(spec.ops, op)
-	return spec
-}
-
-func (f LookupSpec) Exists(path string) LookupSpec {
-	op := gocbcore.SubDocOp{
-		Op:    gocbcore.SubDocOpExists,
-		Path:  path,
-		Flags: gocbcore.SubdocFlagNone,
-	}
-	f.ops = append(f.ops, op)
-
-	return f
-}
-
-func (f LookupSpec) Count(path string) LookupSpec {
-	op := gocbcore.SubDocOp{
-		Op:    gocbcore.SubDocOpGetCount,
-		Path:  path,
-		Flags: gocbcore.SubdocFlagNone,
-	}
-	f.ops = append(f.ops, op)
-
-	return f
-}
-
-func (c *Collection) LookupIn(key string, spec LookupSpec, opts *LookupOptions) (lookOut *DocumentProjection, errOut error) {
-	if opts == nil {
-		opts = &LookupOptions{}
-	}
-	if opts.Context == nil {
-		opts.Context = context.Background()
-	}
-	span := c.startKvOpTrace(opts.Context, "LookupIn")
+func (c *StdCollection) lookupIn(ctx context.Context, traceCtx opentracing.SpanContext, key string, spec GetSpec, opts *GetOptions) (docOut *GetResult, errOut error) {
+	span := c.startKvOpTrace(traceCtx, "LookupIn")
 	defer span.Finish()
 
 	collectionID, agent, err := c.getAgentAndCollection()
@@ -573,7 +628,7 @@ func (c *Collection) LookupIn(key string, spec LookupSpec, opts *LookupOptions) 
 		Flags:        spec.flags,
 		Ops:          spec.ops,
 		CollectionID: collectionID,
-		TraceContext: span.Context(),
+		TraceContext: traceCtx,
 	}, func(res *gocbcore.LookupInResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
@@ -584,19 +639,22 @@ func (c *Collection) LookupIn(key string, spec LookupSpec, opts *LookupOptions) 
 			return
 		}
 
-		resSet := &DocumentProjection{}
-		resSet.contents = make([]ProjectionResult, len(res.Ops))
-		resSet.cas = Cas(res.Cas)
+		if res != nil {
+			resSet := &GetResult{}
+			resSet.contents = make([]getPartial, len(res.Ops))
+			resSet.cas = Cas(res.Cas)
+			resSet.flags = uint32(spec.flags)
 
-		for i, opRes := range res.Ops {
-			resSet.contents[i].path = spec.ops[i].Path
-			resSet.contents[i].err = opRes.Err
-			if opRes.Value != nil {
-				resSet.contents[i].data = append([]byte(nil), opRes.Value...)
+			for i, opRes := range res.Ops {
+				resSet.contents[i].path = spec.ops[i].Path
+				resSet.contents[i].err = opRes.Err
+				if opRes.Value != nil {
+					resSet.contents[i].bytes = append([]byte(nil), opRes.Value...)
+				}
 			}
-		}
 
-		lookOut = resSet
+			docOut = resSet
+		}
 
 		waitCh <- struct{}{}
 	})
@@ -605,31 +663,18 @@ func (c *Collection) LookupIn(key string, spec LookupSpec, opts *LookupOptions) 
 		return
 	}
 
-	timeout := opts.Timeout
-	if timeout > c.sb.KvTimeout || timeout == 0 {
-		timeout = c.sb.KvTimeout
-	}
-	timeoutTmr := gocbcore.AcquireTimer(timeout)
 	select {
-	case <-opts.Context.Done():
-		gocbcore.ReleaseTimer(timeoutTmr, false)
-		if !op.Cancel() {
+	case <-ctx.Done():
+		if op.Cancel() {
+			if err == context.DeadlineExceeded {
+				errOut = TimeoutError{err: err}
+			} else {
+				errOut = ctx.Err()
+			}
+		} else {
 			<-waitCh
-			return
 		}
-		errOut = opts.Context.Err()
-		return
-	case <-timeoutTmr.C:
-		gocbcore.ReleaseTimer(timeoutTmr, true)
-		if !op.Cancel() {
-			<-waitCh
-			return
-		}
-		errOut = errors.New("")
-		// errOut = ErrTimeout
-		return
 	case <-waitCh:
-		gocbcore.ReleaseTimer(timeoutTmr, false)
 	}
 
 	return
@@ -642,11 +687,12 @@ type MutateSpec struct {
 }
 
 type MutateOptions struct {
-	Context     context.Context
-	Cas         Cas
-	PersistTo   uint
-	ReplicateTo uint
-	Timeout     time.Duration
+	ParentSpanContext opentracing.SpanContext
+	Timeout           time.Duration
+	Context           context.Context
+	Cas               Cas
+	PersistTo         uint
+	ReplicateTo       uint
 }
 
 func (spec *MutateSpec) marshalValue(value interface{}) []byte {
@@ -711,14 +757,21 @@ func (spec MutateSpec) ReplaceWithFlags(path string, val interface{}, flags Subd
 	return spec
 }
 
-func (c *Collection) MutateIn(key string, spec MutateSpec, opts *MutateOptions) (mutOut *MutationResult, errOut error) {
+func (c *StdCollection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &MutateOptions{}
 	}
-	if opts.Context == nil {
-		opts.Context = context.Background()
+
+	deadlinedCtx := opts.Context
+	if deadlinedCtx == nil {
+		deadlinedCtx = context.Background()
 	}
-	span := c.startKvOpTrace(opts.Context, "MutateIn")
+
+	d := c.deadline(deadlinedCtx, time.Now(), opts.Timeout)
+	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
+	defer cancel()
+
+	span := c.startKvOpTrace(opts.ParentSpanContext, "MutateIn")
 	defer span.Finish()
 
 	collectionID, agent, err := c.getAgentAndCollection()
@@ -734,6 +787,7 @@ func (c *Collection) MutateIn(key string, spec MutateSpec, opts *MutateOptions) 
 		Cas:          gocbcore.Cas(opts.Cas),
 		CollectionID: collectionID,
 		Ops:          spec.ops,
+		TraceContext: span.Context(),
 	}, func(res *gocbcore.MutateInResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
@@ -761,30 +815,24 @@ func (c *Collection) MutateIn(key string, spec MutateSpec, opts *MutateOptions) 
 		return
 	}
 
-	timeout := opts.Timeout
-	if timeout > c.sb.KvTimeout || timeout == 0 {
-		timeout = c.sb.KvTimeout
-	}
-	timeoutTmr := gocbcore.AcquireTimer(timeout)
 	select {
-	case <-opts.Context.Done():
-		gocbcore.ReleaseTimer(timeoutTmr, false)
-		op.Cancel()
-		errOut = opts.Context.Err()
-		return
-	case <-timeoutTmr.C:
-		gocbcore.ReleaseTimer(timeoutTmr, true)
-		op.Cancel()
-		// errOut = ErrTimeout
-		return
+	case <-deadlinedCtx.Done():
+		if op.Cancel() {
+			if err == context.DeadlineExceeded {
+				errOut = TimeoutError{err: err}
+			} else {
+				errOut = deadlinedCtx.Err()
+			}
+		} else {
+			<-waitCh
+		}
 	case <-waitCh:
-		gocbcore.ReleaseTimer(timeoutTmr, false)
 	}
 
 	return
 }
 
-func (c *Collection) GetAndTouch(key string, opts *TouchOptions) (docOut *Document, errOut error) {
+func (c *StdCollection) GetAndTouch(key string, opts *TouchOptions) (docOut *GetResult, errOut error) {
 	if opts == nil {
 		opts = &TouchOptions{}
 	}
@@ -807,8 +855,11 @@ func (c *Collection) GetAndTouch(key string, opts *TouchOptions) (docOut *Docume
 			return
 		}
 
-		docOut = &Document{
-			bytes: res.Value,
+		docOut = &GetResult{
+			id: key,
+			contents: []getPartial{
+				getPartial{bytes: res.Value, path: ""},
+			},
 			flags: res.Flags,
 			cas:   Cas(res.Cas),
 		}
@@ -829,7 +880,7 @@ func (opts GetAndLockOptions) LockTime(lockTime time.Time) GetAndLockOptions {
 	return opts
 }
 
-func (c *Collection) GetAndLock(key string, opts *GetAndLockOptions) (docOut *Document, errOut error) {
+func (c *StdCollection) GetAndLock(key string, opts *GetAndLockOptions) (docOut *GetResult, errOut error) {
 	if opts == nil {
 		opts = &GetAndLockOptions{}
 	}
@@ -852,8 +903,11 @@ func (c *Collection) GetAndLock(key string, opts *GetAndLockOptions) (docOut *Do
 			return
 		}
 
-		docOut = &Document{
-			bytes: res.Value,
+		docOut = &GetResult{
+			id: key,
+			contents: []getPartial{
+				getPartial{bytes: res.Value, path: ""},
+			},
 			flags: res.Flags,
 			cas:   Cas(res.Cas),
 		}
@@ -874,7 +928,7 @@ func (opts UnlockOptions) Cas(cas Cas) UnlockOptions {
 	return opts
 }
 
-func (c *Collection) Unlock(key string, opts *UnlockOptions) (errOut error) {
+func (c *StdCollection) Unlock(key string, opts *UnlockOptions) (errOut error) {
 	if opts == nil {
 		opts = &UnlockOptions{}
 	}
@@ -914,7 +968,7 @@ func (opts GetReplicaOptions) ReplicaIndex(replicaIdx int) GetReplicaOptions {
 	return opts
 }
 
-func (c *Collection) GetReplica(key string, opts *GetReplicaOptions) (docOut *Document, errOut error) {
+func (c *StdCollection) GetReplica(key string, opts *GetReplicaOptions) (docOut *GetResult, errOut error) {
 	if opts == nil {
 		opts = &GetReplicaOptions{}
 	}
@@ -937,8 +991,11 @@ func (c *Collection) GetReplica(key string, opts *GetReplicaOptions) (docOut *Do
 			return
 		}
 
-		docOut = &Document{
-			bytes: res.Value,
+		docOut = &GetResult{
+			id: key,
+			contents: []getPartial{
+				getPartial{bytes: res.Value, path: ""},
+			},
 			flags: res.Flags,
 			cas:   Cas(res.Cas),
 		}
@@ -959,7 +1016,7 @@ func (opts TouchOptions) ExpireAt(expiry time.Time) TouchOptions {
 	return opts
 }
 
-func (c *Collection) Touch(key string, opts *TouchOptions) (errOut error) {
+func (c *StdCollection) Touch(key string, opts *TouchOptions) (errOut error) {
 	if opts == nil {
 		opts = &TouchOptions{}
 	}

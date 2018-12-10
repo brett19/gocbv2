@@ -11,13 +11,13 @@ import (
 )
 
 type client struct {
-	cluster *Cluster
+	cluster Cluster
 	state   clientStateBlock
 	lock    sync.Mutex
 	agent   atomic.Value // *gocbcore.Agent
 }
 
-func newClient(cluster *Cluster, sb *clientStateBlock) *client {
+func newClient(cluster Cluster, sb *clientStateBlock) *client {
 	client := &client{
 		cluster: cluster,
 		state:   *sb,
@@ -54,11 +54,11 @@ func (c *client) getAgent() (*gocbcore.Agent, error) {
 
 	config.BucketName = c.state.BucketName
 	config.Auth = &coreAuthWrapper{
-		auth:       c.cluster.authenticator,
+		auth:       c.cluster.authenticator(),
 		bucketName: c.state.BucketName,
 	}
 
-	err := config.FromConnStr(c.cluster.connSpec.String())
+	err := config.FromConnStr(c.cluster.connSpec().String())
 	if err != nil {
 		return nil, err
 	}
