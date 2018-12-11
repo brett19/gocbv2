@@ -4,24 +4,26 @@ type Bucket struct {
 	sb stateBlock
 }
 
-func newBucket(c *Cluster, bucketName string) (*Bucket, error) {
-	b := &Bucket{
+type BucketOptions struct {
+	UseMutationTokens bool
+}
+
+func newBucket(c *Cluster, bucketName string, opts BucketOptions) *Bucket {
+	return &Bucket{
 		sb: stateBlock{
 			cluster: c,
 			clientStateBlock: clientStateBlock{
-				BucketName: bucketName,
+				BucketName:        bucketName,
+				UseMutationTokens: opts.UseMutationTokens,
 			},
 		},
 	}
+}
 
+func (b *Bucket) connect() error {
 	b.sb.recacheClient()
 	cli := b.sb.getClient()
-	err := cli.connectAgent()
-	if err != nil {
-		return nil, err
-	}
-
-	return b, nil
+	return cli.connect()
 }
 
 func (b *Bucket) clone() *Bucket {

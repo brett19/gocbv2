@@ -91,9 +91,9 @@ func (c *Collection) clone() *Collection {
 	return &newC
 }
 
-func (c *Collection) getAgentAndCollection() (uint32, *gocbcore.Agent, error) {
+func (c *Collection) getKvOperatorAndId() (uint32, kvOperator, error) {
 	client := c.sb.getClient()
-	agent, err := client.getAgent()
+	agent, err := client.getKvOperator()
 	if err != nil {
 		return 0, nil, err
 	}
@@ -126,24 +126,17 @@ func (c *Collection) getAgentAndCollection() (uint32, *gocbcore.Agent, error) {
 	return collectionID, agent, nil
 }
 
-func (c *Collection) WithDurability(persistTo, replicateTo uint) *Collection {
-	n := c.clone()
-	n.sb.PersistTo = persistTo
-	n.sb.ReplicateTo = replicateTo
-	n.sb.recacheClient()
-	return n
-}
+// func (c *Collection) WithDurability(persistTo, replicateTo uint) *Collection {
+// 	n := c.clone()
+// 	n.sb.PersistTo = persistTo
+// 	n.sb.ReplicateTo = replicateTo
+// 	n.sb.recacheClient()
+// 	return n
+// }
 
 func (c *Collection) WithOperationTimeout(duration time.Duration) *Collection {
 	n := c.clone()
 	n.sb.KvTimeout = duration
-	n.sb.recacheClient()
-	return n
-}
-
-func (c *Collection) WithMutationTokens() *Collection {
-	n := c.clone()
-	n.sb.UseMutationTokens = true
 	n.sb.recacheClient()
 	return n
 }

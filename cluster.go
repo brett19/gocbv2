@@ -7,7 +7,6 @@ import (
 	"time"
 
 	opentracing "github.com/opentracing/opentracing-go"
-	gocbcore "gopkg.in/couchbase/gocbcore.v7"
 	"gopkg.in/couchbaselabs/gocbconnstr.v1"
 )
 
@@ -16,7 +15,7 @@ type Cluster struct {
 	auth  Authenticator
 
 	connectionsLock sync.RWMutex
-	connections     map[string]*client
+	connections     map[string]client
 
 	clusterLock sync.RWMutex
 	// queryCache  map[string]*n1qlCache
@@ -34,7 +33,7 @@ func Connect(connStr string, auth Authenticator) (*Cluster, error) {
 	cluster := &Cluster{
 		cSpec:       connSpec,
 		auth:        auth,
-		connections: make(map[string]*client),
+		connections: make(map[string]client),
 		ssb: servicesStateBlock{
 			n1qlTimeout: 75 * time.Second,
 		},
@@ -76,15 +75,23 @@ func (c *Cluster) parseExtraConnStrOptions(spec gocbconnstr.ConnSpec) error {
 	return nil
 }
 
-func (c *Cluster) Bucket(bucketName string) (*Bucket, error) {
-	return newBucket(c, bucketName)
+func (c *Cluster) Bucket(bucketName string, opts *BucketOptions) (*Bucket, error) {
+	if opts == nil {
+		opts = &BucketOptions{}
+	}
+	b := newBucket(c, bucketName, *opts)
+	err := b.connect()
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 func (c *Cluster) Close() error {
 	return nil
 }
 
-func (c *Cluster) getClient(sb *clientStateBlock) *client {
+func (c *Cluster) getClient(sb *clientStateBlock) client {
 	c.connectionsLock.Lock()
 	defer c.connectionsLock.Unlock()
 
@@ -109,20 +116,20 @@ func (c *Cluster) SetN1qlTimeout(timeout time.Duration) {
 	c.ssb.n1qlTimeout = timeout
 }
 
-func (c *Cluster) randomAgent() (*gocbcore.Agent, error) {
-	c.connectionsLock.RLock()
-	if len(c.connections) == 0 {
-		c.connectionsLock.RUnlock()
-		return nil, nil // TODO: return an error
-	}
-	var randomClient *client
-	for _, c := range c.connections { // This is ugly
-		randomClient = c
-		break
-	}
-	c.connectionsLock.RUnlock()
-	return randomClient.getAgent()
-}
+// func (c *Cluster) randomAgent() (*gocbcore.Agent, error) {
+// 	c.connectionsLock.RLock()
+// 	if len(c.connections) == 0 {
+// 		c.connectionsLock.RUnlock()
+// 		return nil, nil // TODO: return an error
+// 	}
+// 	var randomClient *client
+// 	for _, c := range c.connections { // This is ugly
+// 		randomClient = c
+// 		break
+// 	}
+// 	c.connectionsLock.RUnlock()
+// 	return randomClient.getAgent()
+// }
 
 func (c *Cluster) authenticator() Authenticator {
 	return c.auth

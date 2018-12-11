@@ -9,27 +9,35 @@ import (
 	"gopkg.in/couchbase/gocbcore.v7"
 )
 
-type client struct {
+type client interface {
+	Hash() string
+	connect() error
+	fetchCollectionManifest() (bytesOut []byte, errOut error)
+	fetchCollectionID(scopeName string, collectionName string) (uint32, uint32, error)
+	getKvOperator() (kvOperator, error)
+}
+
+type stdClient struct {
 	cluster *Cluster
 	state   clientStateBlock
 	lock    sync.Mutex
 	agent   *gocbcore.Agent
 }
 
-func newClient(cluster *Cluster, sb *clientStateBlock) *client {
-	client := &client{
+func newClient(cluster *Cluster, sb *clientStateBlock) *stdClient {
+	client := &stdClient{
 		cluster: cluster,
 		state:   *sb,
 	}
 	return client
 }
 
-func (c *client) Hash() string {
+func (c *stdClient) Hash() string {
 	return c.state.Hash()
 }
 
 // TODO: This probably needs to be deadlined...
-func (c *client) connectAgent() error {
+func (c *stdClient) connect() error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -47,6 +55,7 @@ func (c *client) connectAgent() error {
 	}
 
 	config.BucketName = c.state.BucketName
+	config.UseMutationTokens = c.state.UseMutationTokens
 	config.Auth = &coreAuthWrapper{
 		auth:       c.cluster.authenticator(),
 		bucketName: c.state.BucketName,
@@ -66,22 +75,22 @@ func (c *client) connectAgent() error {
 	return nil
 }
 
-func (c *client) getAgent() (*gocbcore.Agent, error) {
+func (c *stdClient) getKvOperator() (kvOperator, error) {
 	if c.agent == nil {
 		return nil, errors.New("Cluster not yet connected")
 	}
 	return c.agent, nil
 }
 
-func (c *client) fetchCollectionManifest() (bytesOut []byte, errOut error) {
-	agent, err := c.getAgent()
-	if err != nil {
-		return nil, err
+func (c *stdClient) fetchCollectionManifest() (bytesOut []byte, errOut error) {
+	if c.agent == nil {
+		errOut = errors.New("Cluster not yet connected")
+		return
 	}
 
 	waitCh := make(chan struct{})
 
-	agent.GetCollectionManifest(func(bytes []byte, err error) {
+	c.agent.GetCollectionManifest(func(bytes []byte, err error) {
 		if err != nil {
 			errOut = err
 			waitCh <- struct{}{}
@@ -97,7 +106,7 @@ func (c *client) fetchCollectionManifest() (bytesOut []byte, errOut error) {
 	return
 }
 
-func (c *client) fetchCollectionID(scopeName string, collectionName string) (uint32, uint32, error) {
+func (c *stdClient) fetchCollectionID(scopeName string, collectionName string) (uint32, uint32, error) {
 	if scopeName == "_default" && collectionName == "_default" {
 		return 0, 0, nil
 	}

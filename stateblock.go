@@ -30,7 +30,7 @@ type servicesStateBlock struct {
 
 type stateBlock struct {
 	cluster      *Cluster
-	cachedClient *client
+	cachedClient client
 
 	clientStateBlock
 
@@ -44,7 +44,7 @@ type stateBlock struct {
 	N1qlRetryBehavior RetryBehavior
 }
 
-func (sb *stateBlock) getClient() *client {
+func (sb *stateBlock) getClient() client {
 	if sb.cachedClient == nil {
 		panic("attempted to fetch client from incomplete state block")
 	}

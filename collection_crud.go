@@ -16,7 +16,13 @@ import (
 // timeout handling down into gocbcore, but that is still uncertain.
 
 type kvOperator interface {
-	SetEx(gocbcore.AddOptions, gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
+	AddEx(opts gocbcore.AddOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
+	SetEx(opts gocbcore.SetOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
+	ReplaceEx(opts gocbcore.ReplaceOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
+	GetEx(opts gocbcore.GetOptions, cb gocbcore.GetExCallback) (gocbcore.PendingOp, error)
+	DeleteEx(opts gocbcore.DeleteOptions, cb gocbcore.DeleteExCallback) (gocbcore.PendingOp, error)
+	LookupInEx(opts gocbcore.LookupInOptions, cb gocbcore.LookupInExCallback) (gocbcore.PendingOp, error)
+	MutateInEx(opts gocbcore.MutateInOptions, cb gocbcore.MutateInExCallback) (gocbcore.PendingOp, error)
 }
 
 func shortestTime(first, second time.Time) time.Time {
@@ -93,7 +99,7 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 
 	log.Printf("Fetching Agent")
 
-	collectionID, agent, err := c.getAgentAndCollection()
+	collectionID, agent, err := c.getKvOperatorAndId()
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +195,7 @@ func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (m
 
 	log.Printf("Fetching Agent")
 
-	collectionID, agent, err := c.getAgentAndCollection()
+	collectionID, agent, err := c.getKvOperatorAndId()
 	if err != nil {
 		errOut = err
 		return
@@ -299,7 +305,7 @@ func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) 
 
 	log.Printf("Fetching Agent")
 
-	collectionID, agent, err := c.getAgentAndCollection()
+	collectionID, agent, err := c.getKvOperatorAndId()
 	if err != nil {
 		return nil, err
 	}
@@ -477,7 +483,7 @@ func (c *Collection) Get(key string, spec *GetSpec, opts *GetOptions) (docOut *G
 }
 
 func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts *GetOptions) (docOut *GetResult, errOut error) {
-	collectionID, agent, err := c.getAgentAndCollection()
+	collectionID, agent, err := c.getKvOperatorAndId()
 	if err != nil {
 		return nil, err
 	}
@@ -557,7 +563,7 @@ func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationRe
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getAgentAndCollection()
+	collectionID, agent, err := c.getKvOperatorAndId()
 	if err != nil {
 		return nil, err
 	}
@@ -616,7 +622,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 	span := c.startKvOpTrace(traceCtx, "LookupIn")
 	defer span.Finish()
 
-	collectionID, agent, err := c.getAgentAndCollection()
+	collectionID, agent, err := c.getKvOperatorAndId()
 	if err != nil {
 		return nil, err
 	}
@@ -774,7 +780,7 @@ func (c *Collection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (m
 	span := c.startKvOpTrace(opts.ParentSpanContext, "MutateIn")
 	defer span.Finish()
 
-	collectionID, agent, err := c.getAgentAndCollection()
+	collectionID, agent, err := c.getKvOperatorAndId()
 	if err != nil {
 		return nil, err
 	}
@@ -832,217 +838,217 @@ func (c *Collection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (m
 	return
 }
 
-func (c *Collection) GetAndTouch(key string, opts *TouchOptions) (docOut *GetResult, errOut error) {
-	if opts == nil {
-		opts = &TouchOptions{}
-	}
+// func (c *Collection) GetAndTouch(key string, opts *TouchOptions) (docOut *GetResult, errOut error) {
+// 	if opts == nil {
+// 		opts = &TouchOptions{}
+// 	}
 
-	collectionID, agent, err := c.getAgentAndCollection()
-	if err != nil {
-		return nil, err
-	}
+// 	collectionID, agent, err := c.getKvOperatorAndId()
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	waitCh := make(chan struct{})
+// 	waitCh := make(chan struct{})
 
-	agent.GetAndTouchEx(gocbcore.GetAndTouchOptions{
-		Key:          []byte(key),
-		CollectionID: collectionID,
-		Expiry:       opts.expiry,
-	}, func(res *gocbcore.GetAndTouchResult, err error) {
-		if err != nil {
-			errOut = err
-			waitCh <- struct{}{}
-			return
-		}
+// 	agent.GetAndTouchEx(gocbcore.GetAndTouchOptions{
+// 		Key:          []byte(key),
+// 		CollectionID: collectionID,
+// 		Expiry:       opts.expiry,
+// 	}, func(res *gocbcore.GetAndTouchResult, err error) {
+// 		if err != nil {
+// 			errOut = err
+// 			waitCh <- struct{}{}
+// 			return
+// 		}
 
-		docOut = &GetResult{
-			id: key,
-			contents: []getPartial{
-				getPartial{bytes: res.Value, path: ""},
-			},
-			flags: res.Flags,
-			cas:   Cas(res.Cas),
-		}
-		waitCh <- struct{}{}
-	})
+// 		docOut = &GetResult{
+// 			id: key,
+// 			contents: []getPartial{
+// 				getPartial{bytes: res.Value, path: ""},
+// 			},
+// 			flags: res.Flags,
+// 			cas:   Cas(res.Cas),
+// 		}
+// 		waitCh <- struct{}{}
+// 	})
 
-	<-waitCh
+// 	<-waitCh
 
-	return
-}
+// 	return
+// }
 
-type GetAndLockOptions struct {
-	lockTime uint32
-}
+// type GetAndLockOptions struct {
+// 	lockTime uint32
+// }
 
-func (opts GetAndLockOptions) LockTime(lockTime time.Time) GetAndLockOptions {
-	opts.lockTime = uint32(lockTime.Unix())
-	return opts
-}
+// func (opts GetAndLockOptions) LockTime(lockTime time.Time) GetAndLockOptions {
+// 	opts.lockTime = uint32(lockTime.Unix())
+// 	return opts
+// }
 
-func (c *Collection) GetAndLock(key string, opts *GetAndLockOptions) (docOut *GetResult, errOut error) {
-	if opts == nil {
-		opts = &GetAndLockOptions{}
-	}
+// func (c *Collection) GetAndLock(key string, opts *GetAndLockOptions) (docOut *GetResult, errOut error) {
+// 	if opts == nil {
+// 		opts = &GetAndLockOptions{}
+// 	}
 
-	collectionID, agent, err := c.getAgentAndCollection()
-	if err != nil {
-		return nil, err
-	}
+// 	collectionID, agent, err := c.getKvOperatorAndId()
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	waitCh := make(chan struct{})
+// 	waitCh := make(chan struct{})
 
-	agent.GetAndLockEx(gocbcore.GetAndLockOptions{
-		Key:          []byte(key),
-		CollectionID: collectionID,
-		LockTime:     opts.lockTime,
-	}, func(res *gocbcore.GetAndLockResult, err error) {
-		if err != nil {
-			errOut = err
-			waitCh <- struct{}{}
-			return
-		}
+// 	agent.GetAndLockEx(gocbcore.GetAndLockOptions{
+// 		Key:          []byte(key),
+// 		CollectionID: collectionID,
+// 		LockTime:     opts.lockTime,
+// 	}, func(res *gocbcore.GetAndLockResult, err error) {
+// 		if err != nil {
+// 			errOut = err
+// 			waitCh <- struct{}{}
+// 			return
+// 		}
 
-		docOut = &GetResult{
-			id: key,
-			contents: []getPartial{
-				getPartial{bytes: res.Value, path: ""},
-			},
-			flags: res.Flags,
-			cas:   Cas(res.Cas),
-		}
-		waitCh <- struct{}{}
-	})
+// 		docOut = &GetResult{
+// 			id: key,
+// 			contents: []getPartial{
+// 				getPartial{bytes: res.Value, path: ""},
+// 			},
+// 			flags: res.Flags,
+// 			cas:   Cas(res.Cas),
+// 		}
+// 		waitCh <- struct{}{}
+// 	})
 
-	<-waitCh
+// 	<-waitCh
 
-	return
-}
+// 	return
+// }
 
-type UnlockOptions struct {
-	cas Cas
-}
+// type UnlockOptions struct {
+// 	cas Cas
+// }
 
-func (opts UnlockOptions) Cas(cas Cas) UnlockOptions {
-	opts.cas = cas
-	return opts
-}
+// func (opts UnlockOptions) Cas(cas Cas) UnlockOptions {
+// 	opts.cas = cas
+// 	return opts
+// }
 
-func (c *Collection) Unlock(key string, opts *UnlockOptions) (errOut error) {
-	if opts == nil {
-		opts = &UnlockOptions{}
-	}
+// func (c *Collection) Unlock(key string, opts *UnlockOptions) (errOut error) {
+// 	if opts == nil {
+// 		opts = &UnlockOptions{}
+// 	}
 
-	collectionID, agent, err := c.getAgentAndCollection()
-	if err != nil {
-		return err
-	}
+// 	collectionID, agent, err := c.getKvOperatorAndId()
+// 	if err != nil {
+// 		return err
+// 	}
 
-	waitCh := make(chan struct{})
+// 	waitCh := make(chan struct{})
 
-	agent.UnlockEx(gocbcore.UnlockOptions{
-		Key:          []byte(key),
-		CollectionID: collectionID,
-		Cas:          gocbcore.Cas(opts.cas),
-	}, func(res *gocbcore.UnlockResult, err error) {
-		if err != nil {
-			errOut = err
-			waitCh <- struct{}{}
-			return
-		}
+// 	agent.UnlockEx(gocbcore.UnlockOptions{
+// 		Key:          []byte(key),
+// 		CollectionID: collectionID,
+// 		Cas:          gocbcore.Cas(opts.cas),
+// 	}, func(res *gocbcore.UnlockResult, err error) {
+// 		if err != nil {
+// 			errOut = err
+// 			waitCh <- struct{}{}
+// 			return
+// 		}
 
-		waitCh <- struct{}{}
-	})
+// 		waitCh <- struct{}{}
+// 	})
 
-	<-waitCh
+// 	<-waitCh
 
-	return
-}
+// 	return
+// }
 
-type GetReplicaOptions struct {
-	replicaIdx int
-}
+// type GetReplicaOptions struct {
+// 	replicaIdx int
+// }
 
-func (opts GetReplicaOptions) ReplicaIndex(replicaIdx int) GetReplicaOptions {
-	opts.replicaIdx = replicaIdx
-	return opts
-}
+// func (opts GetReplicaOptions) ReplicaIndex(replicaIdx int) GetReplicaOptions {
+// 	opts.replicaIdx = replicaIdx
+// 	return opts
+// }
 
-func (c *Collection) GetReplica(key string, opts *GetReplicaOptions) (docOut *GetResult, errOut error) {
-	if opts == nil {
-		opts = &GetReplicaOptions{}
-	}
+// func (c *Collection) GetReplica(key string, opts *GetReplicaOptions) (docOut *GetResult, errOut error) {
+// 	if opts == nil {
+// 		opts = &GetReplicaOptions{}
+// 	}
 
-	collectionID, agent, err := c.getAgentAndCollection()
-	if err != nil {
-		return nil, err
-	}
+// 	collectionID, agent, err := c.getKvOperatorAndId()
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	waitCh := make(chan struct{})
+// 	waitCh := make(chan struct{})
 
-	agent.GetReplicaEx(gocbcore.GetReplicaOptions{
-		Key:          []byte(key),
-		CollectionID: collectionID,
-		ReplicaIdx:   opts.replicaIdx,
-	}, func(res *gocbcore.GetReplicaResult, err error) {
-		if err != nil {
-			errOut = err
-			waitCh <- struct{}{}
-			return
-		}
+// 	agent.GetReplicaEx(gocbcore.GetReplicaOptions{
+// 		Key:          []byte(key),
+// 		CollectionID: collectionID,
+// 		ReplicaIdx:   opts.replicaIdx,
+// 	}, func(res *gocbcore.GetReplicaResult, err error) {
+// 		if err != nil {
+// 			errOut = err
+// 			waitCh <- struct{}{}
+// 			return
+// 		}
 
-		docOut = &GetResult{
-			id: key,
-			contents: []getPartial{
-				getPartial{bytes: res.Value, path: ""},
-			},
-			flags: res.Flags,
-			cas:   Cas(res.Cas),
-		}
-		waitCh <- struct{}{}
-	})
+// 		docOut = &GetResult{
+// 			id: key,
+// 			contents: []getPartial{
+// 				getPartial{bytes: res.Value, path: ""},
+// 			},
+// 			flags: res.Flags,
+// 			cas:   Cas(res.Cas),
+// 		}
+// 		waitCh <- struct{}{}
+// 	})
 
-	<-waitCh
+// 	<-waitCh
 
-	return
-}
+// 	return
+// }
 
-type TouchOptions struct {
-	expiry uint32
-}
+// type TouchOptions struct {
+// 	expiry uint32
+// }
 
-func (opts TouchOptions) ExpireAt(expiry time.Time) TouchOptions {
-	opts.expiry = uint32(expiry.Unix())
-	return opts
-}
+// func (opts TouchOptions) ExpireAt(expiry time.Time) TouchOptions {
+// 	opts.expiry = uint32(expiry.Unix())
+// 	return opts
+// }
 
-func (c *Collection) Touch(key string, opts *TouchOptions) (errOut error) {
-	if opts == nil {
-		opts = &TouchOptions{}
-	}
+// func (c *Collection) Touch(key string, opts *TouchOptions) (errOut error) {
+// 	if opts == nil {
+// 		opts = &TouchOptions{}
+// 	}
 
-	collectionID, agent, err := c.getAgentAndCollection()
-	if err != nil {
-		return err
-	}
+// 	collectionID, agent, err := c.getKvOperatorAndId()
+// 	if err != nil {
+// 		return err
+// 	}
 
-	waitCh := make(chan struct{})
+// 	waitCh := make(chan struct{})
 
-	agent.TouchEx(gocbcore.TouchOptions{
-		Key:          []byte(key),
-		CollectionID: collectionID,
-		Expiry:       opts.expiry,
-	}, func(res *gocbcore.TouchResult, err error) {
-		if err != nil {
-			errOut = err
-			waitCh <- struct{}{}
-			return
-		}
+// 	agent.TouchEx(gocbcore.TouchOptions{
+// 		Key:          []byte(key),
+// 		CollectionID: collectionID,
+// 		Expiry:       opts.expiry,
+// 	}, func(res *gocbcore.TouchResult, err error) {
+// 		if err != nil {
+// 			errOut = err
+// 			waitCh <- struct{}{}
+// 			return
+// 		}
 
-		waitCh <- struct{}{}
-	})
+// 		waitCh <- struct{}{}
+// 	})
 
-	<-waitCh
+// 	<-waitCh
 
-	return
-}
+// 	return
+// }

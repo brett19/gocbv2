@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	gocbcore "gopkg.in/couchbase/gocbcore.v7"
 )
 
 type details struct {
@@ -28,7 +30,8 @@ func TestMain(m *testing.M) {
 		panic("Failed to connect to cluster: " + err.Error())
 	}
 
-	bucket, err := cluster.Bucket("test")
+	opts := &BucketOptions{UseMutationTokens: true}
+	bucket, err := cluster.Bucket("test", opts)
 	if err != nil {
 		panic("Failed to open bucket: " + err.Error())
 	}
@@ -172,4 +175,123 @@ func TestScenarioD(t *testing.T) {
 			}
 		}
 	}
+}
+
+type mockClient struct {
+	bucketName        string
+	useMutationTokens bool
+	collectionId      uint32
+	scopeId           uint32
+}
+
+type mockKvOperator struct {
+	opWait time.Duration
+}
+
+type mockPendingOp struct {
+}
+
+func (mpo *mockPendingOp) Cancel() bool {
+	return true
+}
+
+func (mko *mockKvOperator) AddEx(opts gocbcore.AddOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error) {
+	time.AfterFunc(mko.opWait, func() {
+		cb(&gocbcore.StoreResult{
+			Cas:           gocbcore.Cas(0),
+			MutationToken: gocbcore.MutationToken{},
+		}, nil)
+	})
+	return &mockPendingOp{}, nil
+}
+
+func (mko *mockKvOperator) SetEx(opts gocbcore.SetOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error) {
+	cb(&gocbcore.StoreResult{}, nil)
+	return &mockPendingOp{}, nil
+
+}
+
+func (mko *mockKvOperator) ReplaceEx(opts gocbcore.ReplaceOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error) {
+	cb(&gocbcore.StoreResult{}, nil)
+	return &mockPendingOp{}, nil
+
+}
+
+func (mko *mockKvOperator) GetEx(opts gocbcore.GetOptions, cb gocbcore.GetExCallback) (gocbcore.PendingOp, error) {
+	time.AfterFunc(mko.opWait, func() {
+		cb(&gocbcore.GetResult{
+			Cas:      gocbcore.Cas(0),
+			Flags:    0,
+			Datatype: uint8(gocbcore.DatatypeFlagJson),
+			Value:    []byte{},
+		}, nil)
+	})
+	return &mockPendingOp{}, nil
+
+}
+
+func (mko *mockKvOperator) DeleteEx(opts gocbcore.DeleteOptions, cb gocbcore.DeleteExCallback) (gocbcore.PendingOp, error) {
+	cb(&gocbcore.DeleteResult{}, nil)
+	return &mockPendingOp{}, nil
+
+}
+
+func (mko *mockKvOperator) LookupInEx(opts gocbcore.LookupInOptions, cb gocbcore.LookupInExCallback) (gocbcore.PendingOp, error) {
+	cb(&gocbcore.LookupInResult{}, nil)
+	return &mockPendingOp{}, nil
+
+}
+
+func (mko *mockKvOperator) MutateInEx(opts gocbcore.MutateInOptions, cb gocbcore.MutateInExCallback) (gocbcore.PendingOp, error) {
+	cb(&gocbcore.MutateInResult{}, nil)
+	return &mockPendingOp{}, nil
+
+}
+
+func (mc *mockClient) Hash() string {
+	return fmt.Sprintf("%s-%t",
+		mc.bucketName,
+		mc.useMutationTokens)
+}
+
+func (mc *mockClient) connect() error {
+	return nil
+}
+
+func (mc *mockClient) fetchCollectionManifest() (bytesOut []byte, errOut error) {
+	return []byte{}, nil
+}
+
+func (mc *mockClient) fetchCollectionID(scopeName string, collectionName string) (uint32, uint32, error) {
+	return mc.scopeId, mc.collectionId, nil
+}
+
+func (mc *mockClient) getKvOperator() (kvOperator, error) {
+	return &mockKvOperator{}, nil
+}
+
+func TestMockingClient(t *testing.T) {
+	clients := make(map[string]client)
+	clients["mock-false"] = &mockClient{
+		bucketName:        "mock",
+		collectionId:      0,
+		scopeId:           0,
+		useMutationTokens: false,
+	}
+
+	c := &Cluster{
+		connections: clients,
+	}
+	b := &Bucket{
+		sb: stateBlock{
+			cluster: c,
+			clientStateBlock: clientStateBlock{
+				BucketName: "mock",
+			},
+		},
+	}
+
+	col := b.DefaultCollection()
+	col.Get("key", nil, &GetOptions{})
+
 }
