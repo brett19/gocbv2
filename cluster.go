@@ -76,7 +76,7 @@ func (c *Cluster) parseExtraConnStrOptions(spec gocbconnstr.ConnSpec) error {
 	return nil
 }
 
-func (c *Cluster) Bucket(bucketName string) *Bucket {
+func (c *Cluster) Bucket(bucketName string) (*Bucket, error) {
 	return newBucket(c, bucketName)
 }
 

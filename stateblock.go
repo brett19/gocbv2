@@ -52,6 +52,9 @@ func (sb *stateBlock) getClient() *client {
 	return sb.cachedClient
 }
 
+// TODO: Is the check here redundant? We should only be changing hash if the bucket
+// is different, which is a new stateblock anyway so does recaching ever
+// make sense?
 func (sb *stateBlock) recacheClient() {
 	if sb.cachedClient != nil && sb.cachedClient.Hash() == sb.Hash() {
 		return

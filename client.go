@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"gopkg.in/couchbase/gocbcore.v7"
@@ -14,7 +13,7 @@ type client struct {
 	cluster *Cluster
 	state   clientStateBlock
 	lock    sync.Mutex
-	agent   atomic.Value // *gocbcore.Agent
+	agent   *gocbcore.Agent
 }
 
 func newClient(cluster *Cluster, sb *clientStateBlock) *client {
@@ -30,12 +29,7 @@ func (c *client) Hash() string {
 }
 
 // TODO: This probably needs to be deadlined...
-func (c *client) getAgent() (*gocbcore.Agent, error) {
-	agent, ok := c.agent.Load().(*gocbcore.Agent)
-	if ok && agent != nil {
-		return agent, nil
-	}
-
+func (c *client) connectAgent() error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -60,17 +54,23 @@ func (c *client) getAgent() (*gocbcore.Agent, error) {
 
 	err := config.FromConnStr(c.cluster.connSpec().String())
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	agent, err = gocbcore.CreateAgent(config)
+	agent, err := gocbcore.CreateAgent(config)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	c.agent.Store(agent)
+	c.agent = agent
+	return nil
+}
 
-	return agent, nil
+func (c *client) getAgent() (*gocbcore.Agent, error) {
+	if c.agent == nil {
+		return nil, errors.New("Cluster not yet connected")
+	}
+	return c.agent, nil
 }
 
 func (c *client) fetchCollectionManifest() (bytesOut []byte, errOut error) {

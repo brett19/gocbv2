@@ -28,7 +28,11 @@ func TestMain(m *testing.M) {
 		panic("Failed to connect to cluster: " + err.Error())
 	}
 
-	bucket := cluster.Bucket("test")
+	bucket, err := cluster.Bucket("test")
+	if err != nil {
+		panic("Failed to open bucket: " + err.Error())
+	}
+
 	globalCollection = bucket.DefaultCollection()
 	globalCollection.SetKvTimeout(2 * time.Minute)
 

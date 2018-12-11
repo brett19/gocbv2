@@ -4,8 +4,8 @@ type Bucket struct {
 	sb stateBlock
 }
 
-func newBucket(c *Cluster, bucketName string) *Bucket {
-	return &Bucket{
+func newBucket(c *Cluster, bucketName string) (*Bucket, error) {
+	b := &Bucket{
 		sb: stateBlock{
 			cluster: c,
 			clientStateBlock: clientStateBlock{
@@ -13,6 +13,15 @@ func newBucket(c *Cluster, bucketName string) *Bucket {
 			},
 		},
 	}
+
+	b.sb.recacheClient()
+	cli := b.sb.getClient()
+	err := cli.connectAgent()
+	if err != nil {
+		return nil, err
+	}
+
+	return b, nil
 }
 
 func (b *Bucket) clone() *Bucket {
