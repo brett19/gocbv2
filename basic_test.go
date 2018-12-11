@@ -14,7 +14,7 @@ type details struct {
 	MiddleNames []string `json:"middleNames"`
 }
 
-var globalCollection Collection
+var globalCollection *Collection
 
 func TestMain(m *testing.M) {
 	SetLogger(VerboseStdioLogger())

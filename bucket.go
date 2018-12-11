@@ -1,21 +1,11 @@
 package gocb
 
-type Bucket interface {
-	Name() string
-	Scope(scopeName string) Scope
-	DefaultCollection() Collection
-	Collection(scopeName string, collectionName string) Collection
-	// ViewQuery(designDoc string, viewName string, opts *ViewOptions) (ViewResult, error)
-	// GetManager() *BucketManager
-	stateBlock() stateBlock
-}
-
-type StdBucket struct {
+type Bucket struct {
 	sb stateBlock
 }
 
-func newBucket(c Cluster, bucketName string) Bucket {
-	return &StdBucket{
+func newBucket(c *Cluster, bucketName string) *Bucket {
+	return &Bucket{
 		sb: stateBlock{
 			cluster: c,
 			clientStateBlock: clientStateBlock{
@@ -26,35 +16,35 @@ func newBucket(c Cluster, bucketName string) Bucket {
 	}
 }
 
-func (b *StdBucket) clone() *StdBucket {
+func (b *Bucket) clone() *Bucket {
 	newB := *b
 	return &newB
 }
 
-func (b *StdBucket) Name() string {
+func (b *Bucket) Name() string {
 	return b.sb.BucketName
 }
 
-func (b *StdBucket) Scope(scopeName string) Scope {
+func (b *Bucket) Scope(scopeName string) *Scope {
 	return newScope(b, scopeName)
 }
 
-func (b *StdBucket) DefaultScope() Scope {
+func (b *Bucket) DefaultScope() *Scope {
 	return b.Scope("_default")
 }
 
-func (b *StdBucket) Collection(scopeName string, collectionName string) Collection {
+func (b *Bucket) Collection(scopeName string, collectionName string) *Collection {
 	return b.Scope(scopeName).Collection(collectionName)
 }
 
-func (b *StdBucket) DefaultCollection() Collection {
+func (b *Bucket) DefaultCollection() *Collection {
 	return b.DefaultScope().DefaultCollection()
 }
 
-func (b *StdBucket) Views() *ViewsManager {
+func (b *Bucket) Views() *ViewsManager {
 	return newViewsManager(b)
 }
 
-func (b *StdBucket) stateBlock() stateBlock {
+func (b *Bucket) stateBlock() stateBlock {
 	return b.sb
 }

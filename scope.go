@@ -1,17 +1,11 @@
 package gocb
 
-type Scope interface {
-	Collection(collectionName string) Collection
-	DefaultCollection() Collection
-	stateBlock() stateBlock
-}
-
-type StdScope struct {
+type Scope struct {
 	sb stateBlock
 }
 
-func newScope(bucket Bucket, scopeName string) Scope {
-	scope := &StdScope{
+func newScope(bucket *Bucket, scopeName string) *Scope {
+	scope := &Scope{
 		sb: bucket.stateBlock(),
 	}
 	scope.sb.ScopeName = scopeName
@@ -19,19 +13,19 @@ func newScope(bucket Bucket, scopeName string) Scope {
 	return scope
 }
 
-func (s *StdScope) clone() *StdScope {
+func (s *Scope) clone() *Scope {
 	newS := *s
 	return &newS
 }
 
-func (s *StdScope) Collection(collectionName string) Collection {
+func (s *Scope) Collection(collectionName string) *Collection {
 	return newCollection(s, collectionName)
 }
 
-func (s *StdScope) DefaultCollection() Collection {
+func (s *Scope) DefaultCollection() *Collection {
 	return s.Collection("_default")
 }
 
-func (s *StdScope) stateBlock() stateBlock {
+func (s *Scope) stateBlock() stateBlock {
 	return s.sb
 }

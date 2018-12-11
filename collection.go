@@ -9,31 +9,31 @@ import (
 	gocbcore "gopkg.in/couchbase/gocbcore.v7"
 )
 
-type Collection interface {
-	// Name() string
-	Get(id string, spec *GetSpec, opts *GetOptions) (*GetResult, error)
-	// Append(id string, val interface{}, opts *AppendOptions) (*MutationResult, error)
-	// Prepend(id string, val interface{}, opts *PrependOptions) (*MutationResult, error)
-	// Touch(id string, opts *TouchOptions) (*MutationResult, error)
-	// Unlock(id string, opts *UnlockOptions) (*MutationResult, error)
-	// Increment(id string, opts *IncrementOptions) (*MutationResult, error)
-	// Decrement(id string, opts *DecrementOptions) (*MutationResult, error)
-	Upsert(id string, val interface{}, opts *UpsertOptions) (*MutationResult, error)
-	Insert(id string, val interface{}, opts *InsertOptions) (*MutationResult, error)
-	Replace(id string, val interface{}, opts *ReplaceOptions) (*MutationResult, error)
-	Remove(id string, opts *RemoveOptions) (*MutationResult, error)
-	Mutate(id string, spec MutateSpec, opts *MutateOptions) (*MutationResult, error)
+// type Collection interface {
+// 	// Name() string
+// 	Get(id string, spec *GetSpec, opts *GetOptions) (*GetResult, error)
+// 	// Append(id string, val interface{}, opts *AppendOptions) (*MutationResult, error)
+// 	// Prepend(id string, val interface{}, opts *PrependOptions) (*MutationResult, error)
+// 	// Touch(id string, opts *TouchOptions) (*MutationResult, error)
+// 	// Unlock(id string, opts *UnlockOptions) (*MutationResult, error)
+// 	// Increment(id string, opts *IncrementOptions) (*MutationResult, error)
+// 	// Decrement(id string, opts *DecrementOptions) (*MutationResult, error)
+// 	Upsert(id string, val interface{}, opts *UpsertOptions) (*MutationResult, error)
+// 	Insert(id string, val interface{}, opts *InsertOptions) (*MutationResult, error)
+// 	Replace(id string, val interface{}, opts *ReplaceOptions) (*MutationResult, error)
+// 	Remove(id string, opts *RemoveOptions) (*MutationResult, error)
+// 	Mutate(id string, spec MutateSpec, opts *MutateOptions) (*MutationResult, error)
 
-	SetKvTimeout(duration time.Duration) Collection
-}
+// 	SetKvTimeout(duration time.Duration) Collection
+// }
 
-type StdCollection struct {
+type Collection struct {
 	sb   stateBlock
 	csb  *collectionStateBlock
 	lock sync.Mutex
 }
 
-func (c *StdCollection) setCollectionID(scopeID uint32, collectionID uint32) error {
+func (c *Collection) setCollectionID(scopeID uint32, collectionID uint32) error {
 	if c.initialized() {
 		return errors.New("collection already initialized")
 	}
@@ -47,36 +47,36 @@ func (c *StdCollection) setCollectionID(scopeID uint32, collectionID uint32) err
 	return nil
 }
 
-func (c *StdCollection) collectionID() uint32 {
+func (c *Collection) collectionID() uint32 {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	return c.csb.CollectionID
 }
 
-func (c *StdCollection) initialized() bool {
+func (c *Collection) initialized() bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	return c.csb.CollectionInitialized
 }
 
-func (c *StdCollection) setCollectionUnknown() {
+func (c *Collection) setCollectionUnknown() {
 	c.csb.CollectionUnknown = true
 }
 
-func (c *StdCollection) setScopeUnknown() {
+func (c *Collection) setScopeUnknown() {
 	c.csb.ScopeUnknown = true
 }
 
-func (c *StdCollection) scopeUnknown() bool {
+func (c *Collection) scopeUnknown() bool {
 	return c.csb.ScopeUnknown
 }
 
-func (c *StdCollection) collectionUnknown() bool {
+func (c *Collection) collectionUnknown() bool {
 	return c.csb.CollectionUnknown
 }
 
-func newCollection(scope Scope, collectionName string) Collection {
-	collection := &StdCollection{
+func newCollection(scope *Scope, collectionName string) *Collection {
+	collection := &Collection{
 		sb:  scope.stateBlock(),
 		csb: &collectionStateBlock{},
 	}
@@ -86,12 +86,12 @@ func newCollection(scope Scope, collectionName string) Collection {
 	return collection
 }
 
-func (c *StdCollection) clone() *StdCollection {
+func (c *Collection) clone() *Collection {
 	newC := *c
 	return &newC
 }
 
-func (c *StdCollection) getAgentAndCollection() (uint32, *gocbcore.Agent, error) {
+func (c *Collection) getAgentAndCollection() (uint32, *gocbcore.Agent, error) {
 	client := c.sb.getClient()
 	agent, err := client.getAgent()
 	if err != nil {
@@ -126,7 +126,7 @@ func (c *StdCollection) getAgentAndCollection() (uint32, *gocbcore.Agent, error)
 	return collectionID, agent, nil
 }
 
-func (c *StdCollection) WithDurability(persistTo, replicateTo uint) *StdCollection {
+func (c *Collection) WithDurability(persistTo, replicateTo uint) *Collection {
 	n := c.clone()
 	n.sb.PersistTo = persistTo
 	n.sb.ReplicateTo = replicateTo
@@ -134,21 +134,21 @@ func (c *StdCollection) WithDurability(persistTo, replicateTo uint) *StdCollecti
 	return n
 }
 
-func (c *StdCollection) WithOperationTimeout(duration time.Duration) *StdCollection {
+func (c *Collection) WithOperationTimeout(duration time.Duration) *Collection {
 	n := c.clone()
 	n.sb.KvTimeout = duration
 	n.sb.recacheClient()
 	return n
 }
 
-func (c *StdCollection) WithMutationTokens() *StdCollection {
+func (c *Collection) WithMutationTokens() *Collection {
 	n := c.clone()
 	n.sb.UseMutationTokens = true
 	n.sb.recacheClient()
 	return n
 }
 
-func (c *StdCollection) startKvOpTrace(parentSpanCtx opentracing.SpanContext, operationName string) opentracing.Span {
+func (c *Collection) startKvOpTrace(parentSpanCtx opentracing.SpanContext, operationName string) opentracing.Span {
 	var span opentracing.Span
 	if parentSpanCtx == nil {
 		span = c.sb.tracer.StartSpan("Read",
@@ -163,7 +163,7 @@ func (c *StdCollection) startKvOpTrace(parentSpanCtx opentracing.SpanContext, op
 	return span
 }
 
-func (c *StdCollection) SetKvTimeout(duration time.Duration) Collection {
+func (c *Collection) SetKvTimeout(duration time.Duration) *Collection {
 	c.sb.KvTimeout = duration
 	return c
 }

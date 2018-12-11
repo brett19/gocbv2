@@ -1,10 +1,10 @@
 package gocb
 
 type ViewsManager struct {
-	bucket Bucket
+	bucket *Bucket
 }
 
-func newViewsManager(b Bucket) *ViewsManager {
+func newViewsManager(b *Bucket) *ViewsManager {
 	return &ViewsManager{
 		bucket: b,
 	}

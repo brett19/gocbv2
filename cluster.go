@@ -11,23 +11,7 @@ import (
 	"gopkg.in/couchbaselabs/gocbconnstr.v1"
 )
 
-type Cluster interface {
-	Bucket(bucketName string) Bucket
-	// Query(statement string, params *QueryParameters, opts *QueryOptions) (QueryResults, error)
-	// AnalyticsQuery(statement string, params *AnalyticsParameters, opts *AnalyticsOptions) (AnalyticsResults, error)
-	// SearchQuery(statement string, opts *SearchOptions) (SearchResults, error)
-
-	// Diagnostics() (DiagnosticsResult, error)
-	// Manager() (ClusterManger, error)
-	Tracer() opentracing.Tracer
-	SetN1qlTimeout(timeout time.Duration)
-
-	authenticator() Authenticator
-	connSpec() gocbconnstr.ConnSpec
-	getClient(sb *clientStateBlock) *client
-}
-
-type StdCluster struct {
+type Cluster struct {
 	cSpec gocbconnstr.ConnSpec
 	auth  Authenticator
 
@@ -41,13 +25,13 @@ type StdCluster struct {
 	ssb servicesStateBlock
 }
 
-func Connect(connStr string, auth Authenticator) (Cluster, error) {
+func Connect(connStr string, auth Authenticator) (*Cluster, error) {
 	connSpec, err := gocbconnstr.Parse(connStr)
 	if err != nil {
 		return nil, err
 	}
 
-	cluster := &StdCluster{
+	cluster := &Cluster{
 		cSpec:       connSpec,
 		auth:        auth,
 		connections: make(map[string]*client),
@@ -68,7 +52,7 @@ func Connect(connStr string, auth Authenticator) (Cluster, error) {
 	return cluster, nil
 }
 
-func (c *StdCluster) parseExtraConnStrOptions(spec gocbconnstr.ConnSpec) error {
+func (c *Cluster) parseExtraConnStrOptions(spec gocbconnstr.ConnSpec) error {
 	fetchOption := func(name string) (string, bool) {
 		optValue := spec.Options[name]
 		if len(optValue) == 0 {
@@ -88,15 +72,15 @@ func (c *StdCluster) parseExtraConnStrOptions(spec gocbconnstr.ConnSpec) error {
 	return nil
 }
 
-func (c *StdCluster) Bucket(bucketName string) Bucket {
+func (c *Cluster) Bucket(bucketName string) *Bucket {
 	return newBucket(c, bucketName)
 }
 
-func (c *StdCluster) Close() error {
+func (c *Cluster) Close() error {
 	return nil
 }
 
-func (c *StdCluster) getClient(sb *clientStateBlock) *client {
+func (c *Cluster) getClient(sb *clientStateBlock) *client {
 	c.connectionsLock.Lock()
 	defer c.connectionsLock.Unlock()
 
@@ -112,18 +96,18 @@ func (c *StdCluster) getClient(sb *clientStateBlock) *client {
 }
 
 // N1qlTimeout returns the maximum time to wait for a cluster-level N1QL query to complete.
-func (c *StdCluster) N1qlTimeout() time.Duration {
+func (c *Cluster) N1qlTimeout() time.Duration {
 	return c.ssb.n1qlTimeout
 }
 
 // SetN1qlTimeout sets the maximum time to wait for a cluster-level N1QL query to complete.
-func (c *StdCluster) SetN1qlTimeout(timeout time.Duration) {
+func (c *Cluster) SetN1qlTimeout(timeout time.Duration) {
 	c.ssb.n1qlTimeout = timeout
 }
 
 // SetTracer allows you to specify a custom tracer to use for this cluster.
 // EXPERIMENTAL
-func (c *StdCluster) SetTracer(tracer opentracing.Tracer) {
+func (c *Cluster) SetTracer(tracer opentracing.Tracer) {
 	if c.sb.tracer != nil {
 		tracerDecRef(c.sb.tracer)
 	}
@@ -132,7 +116,7 @@ func (c *StdCluster) SetTracer(tracer opentracing.Tracer) {
 	c.sb.tracer = tracer
 }
 
-func (c *StdCluster) randomAgent() (*gocbcore.Agent, error) {
+func (c *Cluster) randomAgent() (*gocbcore.Agent, error) {
 	c.connectionsLock.RLock()
 	if len(c.connections) == 0 {
 		c.connectionsLock.RUnlock()
@@ -147,14 +131,14 @@ func (c *StdCluster) randomAgent() (*gocbcore.Agent, error) {
 	return randomClient.getAgent()
 }
 
-func (c *StdCluster) Tracer() opentracing.Tracer {
+func (c *Cluster) Tracer() opentracing.Tracer {
 	return c.sb.tracer
 }
 
-func (c *StdCluster) authenticator() Authenticator {
+func (c *Cluster) authenticator() Authenticator {
 	return c.auth
 }
 
-func (c *StdCluster) connSpec() gocbconnstr.ConnSpec {
+func (c *Cluster) connSpec() gocbconnstr.ConnSpec {
 	return c.cSpec
 }

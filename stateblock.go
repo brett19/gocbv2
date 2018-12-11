@@ -31,7 +31,7 @@ type servicesStateBlock struct {
 }
 
 type stateBlock struct {
-	cluster      Cluster
+	cluster      *Cluster
 	cachedClient *client
 
 	clientStateBlock

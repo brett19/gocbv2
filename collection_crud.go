@@ -29,7 +29,7 @@ func shortestTime(first, second time.Time) time.Time {
 	return second
 }
 
-func (c *StdCollection) deadline(ctx context.Context, now time.Time, opTimeout time.Duration) (earliest time.Time) {
+func (c *Collection) deadline(ctx context.Context, now time.Time, opTimeout time.Duration) (earliest time.Time) {
 	if opTimeout > 0 {
 		earliest = now.Add(opTimeout)
 	}
@@ -64,7 +64,7 @@ type InsertOptions struct {
 }
 
 // Insert creates a new document in the Collection.
-func (c *StdCollection) Insert(key string, val interface{}, opts *InsertOptions) (mutOut *MutationResult, errOut error) {
+func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &InsertOptions{}
 	}
@@ -157,7 +157,7 @@ func (c *StdCollection) Insert(key string, val interface{}, opts *InsertOptions)
 }
 
 // Upsert creates a new document in the Collection if it does not exist, if it does exist then it updates it.
-func (c *StdCollection) Upsert(key string, val interface{}, opts *UpsertOptions) (mutOut *MutationResult, errOut error) {
+func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &UpsertOptions{}
 	}
@@ -270,7 +270,7 @@ type ReplaceOptions struct {
 }
 
 // Replace updates a document in the collection
-func (c *StdCollection) Replace(key string, val interface{}, opts *ReplaceOptions) (mutOut *MutationResult, errOut error) {
+func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &ReplaceOptions{}
 	}
@@ -422,7 +422,7 @@ func (f GetSpec) Count(path string) GetSpec {
 	return f
 }
 
-func (c *StdCollection) Get(key string, spec *GetSpec, opts *GetOptions) (docOut *GetResult, errOut error) {
+func (c *Collection) Get(key string, spec *GetSpec, opts *GetOptions) (docOut *GetResult, errOut error) {
 	if opts == nil {
 		opts = &GetOptions{}
 	}
@@ -476,7 +476,7 @@ func (c *StdCollection) Get(key string, spec *GetSpec, opts *GetOptions) (docOut
 	return
 }
 
-func (c *StdCollection) get(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts *GetOptions) (docOut *GetResult, errOut error) {
+func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts *GetOptions) (docOut *GetResult, errOut error) {
 	collectionID, agent, err := c.getAgentAndCollection()
 	if err != nil {
 		return nil, err
@@ -543,7 +543,7 @@ type RemoveOptions struct {
 	WithDurability    DurabilityLevel
 }
 
-func (c *StdCollection) Remove(key string, opts *RemoveOptions) (mutOut *MutationResult, errOut error) {
+func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &RemoveOptions{}
 	}
@@ -612,7 +612,7 @@ func (c *StdCollection) Remove(key string, opts *RemoveOptions) (mutOut *Mutatio
 	return
 }
 
-func (c *StdCollection) lookupIn(ctx context.Context, traceCtx opentracing.SpanContext, key string, spec GetSpec, opts *GetOptions) (docOut *GetResult, errOut error) {
+func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanContext, key string, spec GetSpec, opts *GetOptions) (docOut *GetResult, errOut error) {
 	span := c.startKvOpTrace(traceCtx, "LookupIn")
 	defer span.Finish()
 
@@ -757,7 +757,7 @@ func (spec MutateSpec) ReplaceWithFlags(path string, val interface{}, flags Subd
 	return spec
 }
 
-func (c *StdCollection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (mutOut *MutationResult, errOut error) {
+func (c *Collection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &MutateOptions{}
 	}
@@ -832,7 +832,7 @@ func (c *StdCollection) Mutate(key string, spec MutateSpec, opts *MutateOptions)
 	return
 }
 
-func (c *StdCollection) GetAndTouch(key string, opts *TouchOptions) (docOut *GetResult, errOut error) {
+func (c *Collection) GetAndTouch(key string, opts *TouchOptions) (docOut *GetResult, errOut error) {
 	if opts == nil {
 		opts = &TouchOptions{}
 	}
@@ -880,7 +880,7 @@ func (opts GetAndLockOptions) LockTime(lockTime time.Time) GetAndLockOptions {
 	return opts
 }
 
-func (c *StdCollection) GetAndLock(key string, opts *GetAndLockOptions) (docOut *GetResult, errOut error) {
+func (c *Collection) GetAndLock(key string, opts *GetAndLockOptions) (docOut *GetResult, errOut error) {
 	if opts == nil {
 		opts = &GetAndLockOptions{}
 	}
@@ -928,7 +928,7 @@ func (opts UnlockOptions) Cas(cas Cas) UnlockOptions {
 	return opts
 }
 
-func (c *StdCollection) Unlock(key string, opts *UnlockOptions) (errOut error) {
+func (c *Collection) Unlock(key string, opts *UnlockOptions) (errOut error) {
 	if opts == nil {
 		opts = &UnlockOptions{}
 	}
@@ -968,7 +968,7 @@ func (opts GetReplicaOptions) ReplicaIndex(replicaIdx int) GetReplicaOptions {
 	return opts
 }
 
-func (c *StdCollection) GetReplica(key string, opts *GetReplicaOptions) (docOut *GetResult, errOut error) {
+func (c *Collection) GetReplica(key string, opts *GetReplicaOptions) (docOut *GetResult, errOut error) {
 	if opts == nil {
 		opts = &GetReplicaOptions{}
 	}
@@ -1016,7 +1016,7 @@ func (opts TouchOptions) ExpireAt(expiry time.Time) TouchOptions {
 	return opts
 }
 
-func (c *StdCollection) Touch(key string, opts *TouchOptions) (errOut error) {
+func (c *Collection) Touch(key string, opts *TouchOptions) (errOut error) {
 	if opts == nil {
 		opts = &TouchOptions{}
 	}
