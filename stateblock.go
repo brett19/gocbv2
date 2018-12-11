@@ -3,8 +3,6 @@ package gocb
 import (
 	"fmt"
 	"time"
-
-	opentracing "github.com/opentracing/opentracing-go"
 )
 
 type clientStateBlock struct {
@@ -38,8 +36,6 @@ type stateBlock struct {
 
 	ScopeName      string
 	CollectionName string
-
-	tracer opentracing.Tracer
 
 	KvTimeout   time.Duration
 	PersistTo   uint

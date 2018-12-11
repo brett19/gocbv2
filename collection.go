@@ -151,11 +151,11 @@ func (c *Collection) WithMutationTokens() *Collection {
 func (c *Collection) startKvOpTrace(parentSpanCtx opentracing.SpanContext, operationName string) opentracing.Span {
 	var span opentracing.Span
 	if parentSpanCtx == nil {
-		span = c.sb.tracer.StartSpan("Read",
+		span = opentracing.GlobalTracer().StartSpan("Read",
 			opentracing.Tag{Key: "couchbase.collection", Value: c.sb.CollectionName},
 			opentracing.Tag{Key: "couchbase.service", Value: "kv"})
 	} else {
-		span = c.sb.tracer.StartSpan("Read",
+		span = opentracing.GlobalTracer().StartSpan("Read",
 			opentracing.Tag{Key: "couchbase.collection", Value: c.sb.CollectionName},
 			opentracing.Tag{Key: "couchbase.service", Value: "kv"}, opentracing.ChildOf(parentSpanCtx))
 	}

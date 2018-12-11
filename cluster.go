@@ -39,7 +39,6 @@ func Connect(connStr string, auth Authenticator) (*Cluster, error) {
 			n1qlTimeout: 75 * time.Second,
 		},
 		sb: stateBlock{
-			tracer:            opentracing.NoopTracer{},
 			N1qlRetryBehavior: StandardDelayRetryBehavior(10, 2, 500*time.Millisecond, ExponentialDelayFunction),
 		},
 	}
@@ -47,6 +46,11 @@ func Connect(connStr string, auth Authenticator) (*Cluster, error) {
 	err = cluster.parseExtraConnStrOptions(connSpec)
 	if err != nil {
 		return nil, err
+	}
+
+	if !opentracing.IsGlobalTracerRegistered() {
+		// we'd add threshold logging here
+		opentracing.SetGlobalTracer(opentracing.NoopTracer{})
 	}
 
 	return cluster, nil
@@ -105,17 +109,6 @@ func (c *Cluster) SetN1qlTimeout(timeout time.Duration) {
 	c.ssb.n1qlTimeout = timeout
 }
 
-// SetTracer allows you to specify a custom tracer to use for this cluster.
-// EXPERIMENTAL
-func (c *Cluster) SetTracer(tracer opentracing.Tracer) {
-	if c.sb.tracer != nil {
-		tracerDecRef(c.sb.tracer)
-	}
-
-	tracerAddRef(tracer)
-	c.sb.tracer = tracer
-}
-
 func (c *Cluster) randomAgent() (*gocbcore.Agent, error) {
 	c.connectionsLock.RLock()
 	if len(c.connections) == 0 {
@@ -129,10 +122,6 @@ func (c *Cluster) randomAgent() (*gocbcore.Agent, error) {
 	}
 	c.connectionsLock.RUnlock()
 	return randomClient.getAgent()
-}
-
-func (c *Cluster) Tracer() opentracing.Tracer {
-	return c.sb.tracer
 }
 
 func (c *Cluster) authenticator() Authenticator {
