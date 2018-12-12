@@ -8,14 +8,14 @@ import (
 
 	"github.com/pkg/errors"
 
-	opentracing "github.com/opentracing/opentracing-go"
-	gocbcore "gopkg.in/couchbase/gocbcore.v7"
+	"github.com/opentracing/opentracing-go"
+	"gopkg.in/couchbase/gocbcore.v7"
 )
 
 // TODO: Need to handle timeouts here.  It might be neccessary to move
 // timeout handling down into gocbcore, but that is still uncertain.
 
-type kvOperator interface {
+type kvProvider interface {
 	AddEx(opts gocbcore.AddOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
 	SetEx(opts gocbcore.SetOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
 	ReplaceEx(opts gocbcore.ReplaceOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
@@ -99,7 +99,7 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 
 	log.Printf("Fetching Agent")
 
-	collectionID, agent, err := c.getKvOperatorAndId()
+	collectionID, agent, err := c.getKvProviderAndId()
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +195,7 @@ func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (m
 
 	log.Printf("Fetching Agent")
 
-	collectionID, agent, err := c.getKvOperatorAndId()
+	collectionID, agent, err := c.getKvProviderAndId()
 	if err != nil {
 		errOut = err
 		return
@@ -305,7 +305,7 @@ func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) 
 
 	log.Printf("Fetching Agent")
 
-	collectionID, agent, err := c.getKvOperatorAndId()
+	collectionID, agent, err := c.getKvProviderAndId()
 	if err != nil {
 		return nil, err
 	}
@@ -376,11 +376,22 @@ type GetOptions struct {
 	Timeout           time.Duration
 	Context           context.Context
 	WithExpiry        bool
+	Spec              *GetSpec
 }
 
 type GetSpec struct {
 	ops   []gocbcore.SubDocOp
 	flags gocbcore.SubdocDocFlag
+}
+
+func (opts GetOptions) Project(paths ...string) GetOptions {
+	spec := GetSpec{}
+	for _, path := range paths {
+		spec = spec.Get(path)
+	}
+
+	opts.Spec = &spec
+	return opts
 }
 
 func (spec GetSpec) Get(path string) GetSpec {
@@ -428,7 +439,7 @@ func (f GetSpec) Count(path string) GetSpec {
 	return f
 }
 
-func (c *Collection) Get(key string, spec *GetSpec, opts *GetOptions) (docOut *GetResult, errOut error) {
+func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOut error) {
 	if opts == nil {
 		opts = &GetOptions{}
 	}
@@ -445,45 +456,39 @@ func (c *Collection) Get(key string, spec *GetSpec, opts *GetOptions) (docOut *G
 	span := c.startKvOpTrace(opts.ParentSpanContext, "Get")
 	defer span.Finish()
 
-	if spec == nil {
+	if opts.Spec == nil {
 		if opts.WithExpiry {
 			expSpec := GetSpec{}.GetWithFlags("$document.exptime", SubdocFlagXattr).Get("")
-			lookin, err := c.lookupIn(deadlinedCtx, span.Context(), key, expSpec, opts)
+			result, err := c.lookupIn(deadlinedCtx, span.Context(), key, expSpec, opts)
 			if err != nil {
 				errOut = err
 				return
 			}
-			var partialBytes []byte
-			err = lookin.ContentByIndex(1, &partialBytes)
+			var expireAt uint32
+			err = result.ContentAt("$document.exptime", &expireAt)
 			if err != nil {
 				errOut = err
 				return
 			}
-			doc := &GetResult{
-				id:       key,
-				contents: []getPartial{getPartial{bytes: partialBytes}},
-				flags:    lookin.flags,
-				cas:      Cas(lookin.cas),
-			}
-			err = lookin.ContentByIndex(0, &doc.expireAt)
-			if err != nil {
-				errOut = err
-				return
-			}
-			docOut = doc
+
+			result.withExpiry = true
+			result.expireAt = expireAt
+			delete(result.contents, "$document")
+
+			docOut = result
 			return
 		}
 
 		docOut, errOut = c.get(deadlinedCtx, span.Context(), key, opts)
 		return
 	}
-	docOut, errOut = c.lookupIn(deadlinedCtx, span.Context(), key, *spec, opts)
+	docOut, errOut = c.lookupIn(deadlinedCtx, span.Context(), key, *opts.Spec, opts)
 
 	return
 }
 
 func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts *GetOptions) (docOut *GetResult, errOut error) {
-	collectionID, agent, err := c.getKvOperatorAndId()
+	collectionID, agent, err := c.getKvProviderAndId()
 	if err != nil {
 		return nil, err
 	}
@@ -504,13 +509,13 @@ func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, 
 			return
 		}
 		if res != nil {
+			contents := make(map[string]interface{})
+			contents[""] = res.Value
 			doc := &GetResult{
-				id: key,
-				contents: []getPartial{
-					getPartial{bytes: res.Value, path: ""},
-				},
-				flags: res.Flags,
-				cas:   Cas(res.Cas),
+				id:       key,
+				contents: contents,
+				flags:    res.Flags,
+				cas:      Cas(res.Cas),
 			}
 
 			docOut = doc
@@ -563,7 +568,7 @@ func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationRe
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvOperatorAndId()
+	collectionID, agent, err := c.getKvProviderAndId()
 	if err != nil {
 		return nil, err
 	}
@@ -622,7 +627,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 	span := c.startKvOpTrace(traceCtx, "LookupIn")
 	defer span.Finish()
 
-	collectionID, agent, err := c.getKvOperatorAndId()
+	collectionID, agent, err := c.getKvProviderAndId()
 	if err != nil {
 		return nil, err
 	}
@@ -647,17 +652,9 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 
 		if res != nil {
 			resSet := &GetResult{}
-			resSet.contents = make([]getPartial, len(res.Ops))
 			resSet.cas = Cas(res.Cas)
 			resSet.flags = uint32(spec.flags)
-
-			for i, opRes := range res.Ops {
-				resSet.contents[i].path = spec.ops[i].Path
-				resSet.contents[i].err = opRes.Err
-				if opRes.Value != nil {
-					resSet.contents[i].bytes = append([]byte(nil), opRes.Value...)
-				}
-			}
+			resSet.fromSubDoc(spec.ops, res.Ops)
 
 			docOut = resSet
 		}
@@ -780,7 +777,7 @@ func (c *Collection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (m
 	span := c.startKvOpTrace(opts.ParentSpanContext, "MutateIn")
 	defer span.Finish()
 
-	collectionID, agent, err := c.getKvOperatorAndId()
+	collectionID, agent, err := c.getKvProviderAndId()
 	if err != nil {
 		return nil, err
 	}
@@ -843,7 +840,7 @@ func (c *Collection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (m
 // 		opts = &TouchOptions{}
 // 	}
 
-// 	collectionID, agent, err := c.getKvOperatorAndId()
+// 	collectionID, agent, err := c.getKvProviderAndId()
 // 	if err != nil {
 // 		return nil, err
 // 	}
@@ -891,7 +888,7 @@ func (c *Collection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (m
 // 		opts = &GetAndLockOptions{}
 // 	}
 
-// 	collectionID, agent, err := c.getKvOperatorAndId()
+// 	collectionID, agent, err := c.getKvProviderAndId()
 // 	if err != nil {
 // 		return nil, err
 // 	}
@@ -939,7 +936,7 @@ func (c *Collection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (m
 // 		opts = &UnlockOptions{}
 // 	}
 
-// 	collectionID, agent, err := c.getKvOperatorAndId()
+// 	collectionID, agent, err := c.getKvProviderAndId()
 // 	if err != nil {
 // 		return err
 // 	}
@@ -979,7 +976,7 @@ func (c *Collection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (m
 // 		opts = &GetReplicaOptions{}
 // 	}
 
-// 	collectionID, agent, err := c.getKvOperatorAndId()
+// 	collectionID, agent, err := c.getKvProviderAndId()
 // 	if err != nil {
 // 		return nil, err
 // 	}
@@ -1027,7 +1024,7 @@ func (c *Collection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (m
 // 		opts = &TouchOptions{}
 // 	}
 
-// 	collectionID, agent, err := c.getKvOperatorAndId()
+// 	collectionID, agent, err := c.getKvProviderAndId()
 // 	if err != nil {
 // 		return err
 // 	}

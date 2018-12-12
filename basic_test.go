@@ -64,7 +64,7 @@ func TestScenarioA(t *testing.T) {
 	}
 	fmt.Printf("Upsert result: %+v\n", res)
 
-	doc, err := globalCollection.Get("scenarioa", nil, &GetOptions{WithExpiry: true, Context: ctx})
+	doc, err := globalCollection.Get("scenarioa", &GetOptions{WithExpiry: true, Context: ctx})
 	if err != nil {
 		t.Fatalf("Failed to fetch key: %s", err)
 	}
@@ -115,8 +115,8 @@ func TestScenarioB(t *testing.T) {
 	}
 	fmt.Printf("Upsert result: %+v\n", res)
 
-	spec := GetSpec{}.Get("middleNames")
-	doc, err := globalCollection.Get("scenariob", &spec, &GetOptions{})
+	opts := GetOptions{Timeout: 500 * time.Millisecond}.Project("middleNames", "id")
+	doc, err := globalCollection.Get("scenariob", &opts)
 	if err != nil {
 		t.Fatalf("Failed to extract: %s", err)
 	}
@@ -153,7 +153,7 @@ func TestScenarioD(t *testing.T) {
 	}
 
 	for {
-		doc, err := globalCollection.Get("scenariod", nil, nil)
+		doc, err := globalCollection.Get("scenariod", nil)
 		if err != nil {
 			t.Fatalf("Failed to fetch key: %s", err)
 		}
@@ -266,7 +266,7 @@ func (mc *mockClient) fetchCollectionID(scopeName string, collectionName string)
 	return mc.scopeId, mc.collectionId, nil
 }
 
-func (mc *mockClient) getKvOperator() (kvOperator, error) {
+func (mc *mockClient) getKvProvider() (kvProvider, error) {
 	return &mockKvOperator{}, nil
 }
 
@@ -292,6 +292,6 @@ func TestMockingClient(t *testing.T) {
 	}
 
 	col := b.DefaultCollection()
-	col.Get("key", nil, &GetOptions{})
+	col.Get("key", &GetOptions{})
 
 }

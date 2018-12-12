@@ -91,9 +91,9 @@ func (c *Collection) clone() *Collection {
 	return &newC
 }
 
-func (c *Collection) getKvOperatorAndId() (uint32, kvOperator, error) {
+func (c *Collection) getKvProviderAndId() (uint32, kvProvider, error) {
 	client := c.sb.getClient()
-	agent, err := client.getKvOperator()
+	agent, err := client.getKvProvider()
 	if err != nil {
 		return 0, nil, err
 	}

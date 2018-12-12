@@ -3,7 +3,10 @@ package gocb
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
+
+	"gopkg.in/couchbase/gocbcore.v7"
 )
 
 type getPartial struct {
@@ -18,7 +21,7 @@ type GetResult struct {
 	cas        Cas
 	expireAt   uint32
 	withExpiry bool
-	contents   []getPartial
+	contents   map[string]interface{}
 	pathMap    map[string]int
 }
 
@@ -39,45 +42,58 @@ func (d *GetResult) Expiry() time.Time {
 }
 
 func (d *GetResult) Content(valuePtr interface{}) error {
-	return json.Unmarshal(d.contents[0].bytes, valuePtr)
+	return json.Unmarshal(d.contents[""].([]byte), valuePtr)
 }
 
 func (d *GetResult) Decode(valuePtr interface{}, decode Decode) error {
 	if decode == nil {
 		decode = DefaultDecode
 	}
-
-	return decode(d.contents[0].bytes, d.flags, valuePtr)
-}
-
-// ContentByIndex retrieves the value of the operation by its index. The index is the position of
-// the operation as it was added to the builder.
-func (d *GetResult) ContentByIndex(idx int, valuePtr interface{}) error {
-	if d.contents[idx].err != nil {
-		return d.contents[idx].err
-	}
-
-	if valuePtr, ok := valuePtr.(*[]byte); ok {
-		*valuePtr = d.contents[idx].bytes
-		return nil
-	}
-
-	return json.Unmarshal(d.contents[idx].bytes, valuePtr)
+	return decode(d.contents[""].([]byte), d.flags, valuePtr)
 }
 
 // ContentAt retrieves the value of the operation by its path. The path is the path provided
 // to the operation.
 func (d *GetResult) ContentAt(path string, valuePtr interface{}) error {
-	if d.pathMap == nil {
-		d.pathMap = make(map[string]int)
-		for i, v := range d.contents {
-			d.pathMap[v.path] = i
+	currentPath := d.contents
+	var currentContent interface{}
+	var ok bool
+	for _, pathPart := range strings.Split(path, ".") {
+		currentContent, ok = currentPath[pathPart]
+		if !ok {
+			return errors.New("Subdoc path does not exist") //TODO: error
+		}
+		switch currentContent.(type) {
+		case map[string]interface{}:
+			currentPath = currentPath[pathPart].(map[string]interface{})
+		default:
+			break
 		}
 	}
 
-	content, ok := d.pathMap[path]
-	if !ok {
-		return errors.New("Subdoc path does not exist") //TODO: error
+	err := json.Unmarshal(currentContent.([]byte), valuePtr)
+	if err != nil {
+		return errors.New("")
 	}
-	return d.ContentByIndex(content, valuePtr)
+
+	return nil
+}
+
+func (d *GetResult) fromSubDoc(ops []gocbcore.SubDocOp, result []gocbcore.SubDocResult) {
+	content := make(map[string]interface{})
+	for i, op := range ops {
+		d.set(strings.Split(op.Path, "."), 0, content, result[i].Value)
+	}
+	d.contents = content
+}
+
+func (d *GetResult) set(path []string, i int, content map[string]interface{}, value interface{}) {
+	if i == len(path)-1 {
+		content[path[i]] = value
+		return
+	}
+	if _, ok := content[path[i]]; !ok {
+		content[path[i]] = make(map[string]interface{})
+	}
+	d.set(path, i+1, content[path[i]].(map[string]interface{}), value)
 }
