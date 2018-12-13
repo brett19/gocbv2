@@ -2,7 +2,6 @@ package gocb
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -46,17 +45,15 @@ func (d *GetResult) Decode(valuePtr interface{}, decode Decode) error {
 	return decode(d.contents, d.flags, valuePtr)
 }
 
-func (d *GetResult) fromSubDoc(ops []gocbcore.SubDocOp, result []projectionResult) error {
+func (d *GetResult) fromSubDoc(ops []gocbcore.SubDocOp, result *LookupInResult) error {
 	content := make(map[string]interface{})
 	for i, op := range ops {
-		d.set(strings.Split(op.Path, "."), 0, content, result[i].data)
+		d.set(strings.Split(op.Path, "."), 0, content, result.contents[i].data)
 	}
 	bytes, err := json.Marshal(content)
 	if err != nil {
 		return errors.New("someerror") // TODO
 	}
-	thing := string(bytes)
-	fmt.Println(thing)
 	d.contents = bytes
 
 	return nil

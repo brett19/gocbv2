@@ -382,7 +382,7 @@ type GetOptions struct {
 func (opts GetOptions) Project(paths ...string) GetOptions {
 	spec := LookupInOptions{}
 	for _, path := range paths {
-		spec = spec.Get(path)
+		spec = spec.Path(path)
 	}
 
 	opts.spec = &spec
@@ -408,7 +408,7 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 
 	if opts.spec == nil {
 		if opts.WithExpiry {
-			expSpec := LookupInOptions{}.getWithFlags("$document.exptime", SubdocFlagXattr).Get("")
+			expSpec := LookupInOptions{}.getWithFlags("$document.exptime", SubdocFlagXattr).Path("")
 			expSpec.Context = deadlinedCtx
 			result, err := c.lookupIn(deadlinedCtx, span.Context(), key, &expSpec)
 			if err != nil {
@@ -436,7 +436,7 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 	}
 
 	doc := &GetResult{}
-	doc.fromSubDoc(opts.spec.spec.ops, result.contents)
+	doc.fromSubDoc(opts.spec.spec.ops, result)
 	docOut = doc
 
 	return
@@ -581,6 +581,7 @@ type lookupSpec struct {
 	flags gocbcore.SubdocDocFlag
 }
 
+// LookupInOptions are the set of options available to LookupIn.
 type LookupInOptions struct {
 	Context           context.Context
 	Timeout           time.Duration
@@ -588,7 +589,7 @@ type LookupInOptions struct {
 	ParentSpanContext opentracing.SpanContext
 }
 
-func (opts LookupInOptions) Get(path string) LookupInOptions {
+func (opts LookupInOptions) Path(path string) LookupInOptions {
 	return opts.getWithFlags(path, SubdocFlagNone)
 }
 
@@ -611,20 +612,9 @@ func (opts LookupInOptions) getWithFlags(path string, flags SubdocFlag) LookupIn
 	return opts
 }
 
-func (opts LookupInOptions) Exists(path string) LookupInOptions {
+func (opts LookupInOptions) PathExists(path string) LookupInOptions {
 	op := gocbcore.SubDocOp{
 		Op:    gocbcore.SubDocOpExists,
-		Path:  path,
-		Flags: gocbcore.SubdocFlagNone,
-	}
-	opts.spec.ops = append(opts.spec.ops, op)
-
-	return opts
-}
-
-func (opts LookupInOptions) Count(path string) LookupInOptions {
-	op := gocbcore.SubDocOp{
-		Op:    gocbcore.SubDocOpGetCount,
 		Path:  path,
 		Flags: gocbcore.SubdocFlagNone,
 	}
@@ -680,10 +670,10 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 		if res != nil {
 			resSet := &LookupInResult{}
 			resSet.cas = Cas(res.Cas)
-			resSet.contents = make([]projectionResult, len(opts.spec.ops))
+			resSet.contents = make([]lookupInPartial, len(opts.spec.ops))
 
 			for i, opRes := range res.Ops {
-				resSet.contents[i].path = opts.spec.ops[i].Path
+				// resSet.contents[i].path = opts.spec.ops[i].Path
 				resSet.contents[i].err = opRes.Err
 				if opRes.Value != nil {
 					resSet.contents[i].data = append([]byte(nil), opRes.Value...)
