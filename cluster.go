@@ -19,7 +19,7 @@ type Cluster struct {
 	connections     map[string]client
 
 	clusterLock sync.RWMutex
-	// queryCache  map[string]*n1qlCache
+	queryCache  map[string]*n1qlCache
 
 	sb  stateBlock
 	ssb servicesStateBlock
@@ -117,20 +117,20 @@ func (c *Cluster) SetN1qlTimeout(timeout time.Duration) {
 	c.ssb.n1qlTimeout = timeout
 }
 
-// func (c *Cluster) randomAgent() (*gocbcore.Agent, error) {
-// 	c.connectionsLock.RLock()
-// 	if len(c.connections) == 0 {
-// 		c.connectionsLock.RUnlock()
-// 		return nil, nil // TODO: return an error
-// 	}
-// 	var randomClient *client
-// 	for _, c := range c.connections { // This is ugly
-// 		randomClient = c
-// 		break
-// 	}
-// 	c.connectionsLock.RUnlock()
-// 	return randomClient.getAgent()
-// }
+func (c *Cluster) randomClient() (client, error) {
+	c.connectionsLock.RLock()
+	if len(c.connections) == 0 {
+		c.connectionsLock.RUnlock()
+		return nil, nil // TODO: return an error
+	}
+	var randomClient client
+	for _, c := range c.connections { // This is ugly
+		randomClient = c
+		break
+	}
+	c.connectionsLock.RUnlock()
+	return randomClient, nil
+}
 
 func (c *Cluster) authenticator() Authenticator {
 	return c.auth
@@ -146,4 +146,18 @@ func (c *Cluster) Diagnostics(reportId string) (*DiagnosticsResult, error) {
 
 func (c *Cluster) Manager() (*ClusterManager, error) {
 	return nil, errors.New("Not implemented")
+}
+
+func (c *Cluster) getQueryProvider() (queryProvider, error) {
+	client, err := c.randomClient()
+	if err != nil {
+		return nil, err
+	}
+
+	provider, err := client.getQueryProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	return provider, nil
 }
