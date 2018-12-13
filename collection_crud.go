@@ -376,67 +376,17 @@ type GetOptions struct {
 	Timeout           time.Duration
 	Context           context.Context
 	WithExpiry        bool
-	Spec              *GetSpec
-}
-
-type GetSpec struct {
-	ops   []gocbcore.SubDocOp
-	flags gocbcore.SubdocDocFlag
+	spec              *LookupInOptions
 }
 
 func (opts GetOptions) Project(paths ...string) GetOptions {
-	spec := GetSpec{}
+	spec := LookupInOptions{}
 	for _, path := range paths {
 		spec = spec.Get(path)
 	}
 
-	opts.Spec = &spec
+	opts.spec = &spec
 	return opts
-}
-
-func (spec GetSpec) Get(path string) GetSpec {
-	return spec.GetWithFlags(path, SubdocFlagNone)
-}
-
-func (spec GetSpec) GetWithFlags(path string, flags SubdocFlag) GetSpec {
-	if path == "" {
-		op := gocbcore.SubDocOp{
-			Op:    gocbcore.SubDocOpGetDoc,
-			Flags: gocbcore.SubdocFlag(flags),
-		}
-		spec.ops = append(spec.ops, op)
-		return spec
-	}
-
-	op := gocbcore.SubDocOp{
-		Op:    gocbcore.SubDocOpGet,
-		Path:  path,
-		Flags: gocbcore.SubdocFlag(flags),
-	}
-	spec.ops = append(spec.ops, op)
-	return spec
-}
-
-func (f GetSpec) Exists(path string) GetSpec {
-	op := gocbcore.SubDocOp{
-		Op:    gocbcore.SubDocOpExists,
-		Path:  path,
-		Flags: gocbcore.SubdocFlagNone,
-	}
-	f.ops = append(f.ops, op)
-
-	return f
-}
-
-func (f GetSpec) Count(path string) GetSpec {
-	op := gocbcore.SubDocOp{
-		Op:    gocbcore.SubDocOpGetCount,
-		Path:  path,
-		Flags: gocbcore.SubdocFlagNone,
-	}
-	f.ops = append(f.ops, op)
-
-	return f
 }
 
 func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOut error) {
@@ -456,33 +406,38 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 	span := c.startKvOpTrace(opts.ParentSpanContext, "Get")
 	defer span.Finish()
 
-	if opts.Spec == nil {
+	if opts.spec == nil {
 		if opts.WithExpiry {
-			expSpec := GetSpec{}.GetWithFlags("$document.exptime", SubdocFlagXattr).Get("")
-			result, err := c.lookupIn(deadlinedCtx, span.Context(), key, expSpec, opts)
-			if err != nil {
-				errOut = err
-				return
-			}
-			var expireAt uint32
-			err = result.ContentAt("$document.exptime", &expireAt)
+			expSpec := LookupInOptions{}.getWithFlags("$document.exptime", SubdocFlagXattr).Get("")
+			expSpec.Context = deadlinedCtx
+			result, err := c.lookupIn(deadlinedCtx, span.Context(), key, &expSpec)
 			if err != nil {
 				errOut = err
 				return
 			}
 
-			result.withExpiry = true
-			result.expireAt = expireAt
-			delete(result.contents, "$document")
+			doc := &GetResult{}
+			doc.withExpiry = true
 
-			docOut = result
+			result.ContentAt(0, &doc.expireAt)
+			result.ContentAt(1, &doc.contents)
+
+			docOut = doc
 			return
 		}
 
 		docOut, errOut = c.get(deadlinedCtx, span.Context(), key, opts)
 		return
 	}
-	docOut, errOut = c.lookupIn(deadlinedCtx, span.Context(), key, *opts.Spec, opts)
+	result, err := c.lookupIn(deadlinedCtx, span.Context(), key, opts.spec)
+	if err != nil {
+		errOut = err
+		return
+	}
+
+	doc := &GetResult{}
+	doc.fromSubDoc(opts.spec.spec.ops, result.contents)
+	docOut = doc
 
 	return
 }
@@ -509,11 +464,9 @@ func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, 
 			return
 		}
 		if res != nil {
-			contents := make(map[string]interface{})
-			contents[""] = res.Value
 			doc := &GetResult{
 				id:       key,
-				contents: contents,
+				contents: res.Value,
 				flags:    res.Flags,
 				cas:      Cas(res.Cas),
 			}
@@ -623,10 +576,84 @@ func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationRe
 	return
 }
 
-func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanContext, key string, spec GetSpec, opts *GetOptions) (docOut *GetResult, errOut error) {
-	span := c.startKvOpTrace(traceCtx, "LookupIn")
+type lookupSpec struct {
+	ops   []gocbcore.SubDocOp
+	flags gocbcore.SubdocDocFlag
+}
+
+type LookupInOptions struct {
+	Context           context.Context
+	Timeout           time.Duration
+	spec              lookupSpec
+	ParentSpanContext opentracing.SpanContext
+}
+
+func (opts LookupInOptions) Get(path string) LookupInOptions {
+	return opts.getWithFlags(path, SubdocFlagNone)
+}
+
+func (opts LookupInOptions) getWithFlags(path string, flags SubdocFlag) LookupInOptions {
+	if path == "" {
+		op := gocbcore.SubDocOp{
+			Op:    gocbcore.SubDocOpGetDoc,
+			Flags: gocbcore.SubdocFlag(flags),
+		}
+		opts.spec.ops = append(opts.spec.ops, op)
+		return opts
+	}
+
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpGet,
+		Path:  path,
+		Flags: gocbcore.SubdocFlag(flags),
+	}
+	opts.spec.ops = append(opts.spec.ops, op)
+	return opts
+}
+
+func (opts LookupInOptions) Exists(path string) LookupInOptions {
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpExists,
+		Path:  path,
+		Flags: gocbcore.SubdocFlagNone,
+	}
+	opts.spec.ops = append(opts.spec.ops, op)
+
+	return opts
+}
+
+func (opts LookupInOptions) Count(path string) LookupInOptions {
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpGetCount,
+		Path:  path,
+		Flags: gocbcore.SubdocFlagNone,
+	}
+	opts.spec.ops = append(opts.spec.ops, op)
+
+	return opts
+}
+
+func (c *Collection) LookupIn(ctx context.Context, key string, opts *LookupInOptions) (docOut *LookupInResult, errOut error) {
+	if opts == nil {
+		opts = &LookupInOptions{}
+	}
+
+	deadlinedCtx := opts.Context
+	if deadlinedCtx == nil {
+		deadlinedCtx = context.Background()
+	}
+
+	d := c.deadline(deadlinedCtx, time.Now(), opts.Timeout)
+	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
+	defer cancel()
+
+	span := c.startKvOpTrace(opts.ParentSpanContext, "LookupIn")
 	defer span.Finish()
 
+	return c.lookupIn(ctx, span.Context(), key, opts)
+}
+
+func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts *LookupInOptions) (docOut *LookupInResult, errOut error) {
 	collectionID, agent, err := c.getKvProviderAndId()
 	if err != nil {
 		return nil, err
@@ -636,8 +663,8 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 
 	op, err := agent.LookupInEx(gocbcore.LookupInOptions{
 		Key:          []byte(key),
-		Flags:        spec.flags,
-		Ops:          spec.ops,
+		Flags:        opts.spec.flags,
+		Ops:          opts.spec.ops,
 		CollectionID: collectionID,
 		TraceContext: traceCtx,
 	}, func(res *gocbcore.LookupInResult, err error) {
@@ -651,10 +678,17 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 		}
 
 		if res != nil {
-			resSet := &GetResult{}
+			resSet := &LookupInResult{}
 			resSet.cas = Cas(res.Cas)
-			resSet.flags = uint32(spec.flags)
-			resSet.fromSubDoc(spec.ops, res.Ops)
+			resSet.contents = make([]projectionResult, len(opts.spec.ops))
+
+			for i, opRes := range res.Ops {
+				resSet.contents[i].path = opts.spec.ops[i].Path
+				resSet.contents[i].err = opRes.Err
+				if opRes.Value != nil {
+					resSet.contents[i].data = append([]byte(nil), opRes.Value...)
+				}
+			}
 
 			docOut = resSet
 		}

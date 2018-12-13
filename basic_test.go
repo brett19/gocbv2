@@ -11,12 +11,13 @@ import (
 )
 
 type details struct {
-	Name        string   `json:"name"`
-	Id          int      `json:"id"`
-	MiddleNames []string `json:"middleNames"`
+	Name        string   `json:"name,omitempty"`
+	Id          int      `json:"id,omitempty"`
+	MiddleNames []string `json:"middleNames,omitempty"`
 }
 
 var globalCollection *Collection
+var globalCluster *Cluster
 
 func TestMain(m *testing.M) {
 	SetLogger(VerboseStdioLogger())
@@ -25,13 +26,14 @@ func TestMain(m *testing.M) {
 		Password: "password",
 	}
 
-	cluster, err := Connect("couchbase://10.112.192.101", auth)
+	var err error
+	globalCluster, err = Connect("couchbase://10.112.192.101", auth)
 	if err != nil {
 		panic("Failed to connect to cluster: " + err.Error())
 	}
 
 	opts := &BucketOptions{UseMutationTokens: true}
-	bucket, err := cluster.Bucket("test", opts)
+	bucket, err := globalCluster.Bucket("test", opts)
 	if err != nil {
 		panic("Failed to open bucket: " + err.Error())
 	}
@@ -69,6 +71,10 @@ func TestScenarioA(t *testing.T) {
 		t.Fatalf("Failed to fetch key: %s", err)
 	}
 	fmt.Printf("Get result: %+v\n", doc)
+
+	if !doc.withExpiry || doc.expireAt == 0 {
+		t.Fatalf("Doc has no expiry")
+	}
 
 	var retVal details
 	err = doc.Content(&retVal)
@@ -120,13 +126,18 @@ func TestScenarioB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to extract: %s", err)
 	}
-	var middleNames []string
-	doc.ContentAt("middleNames", &middleNames)
-	fmt.Printf("Lookup result %+v\n", middleNames)
 
-	middleNames = append(middleNames, "James")
+	var projection details
+	err = doc.Content(&projection)
+	if err != nil {
+		t.Fatalf("Failed to extract: %s", err)
+	}
 
-	mutRes, err := globalCollection.Mutate("scenariob", MutateSpec{}.Replace("middleNames", middleNames), &MutateOptions{})
+	fmt.Printf("Lookup result %+v\n", projection)
+
+	projection.MiddleNames = append(projection.MiddleNames, "James")
+
+	mutRes, err := globalCollection.Mutate("scenariob", MutateSpec{}.Replace("middleNames", projection.MiddleNames), &MutateOptions{})
 	if err != nil {
 		t.Fatalf("Failed to extract: %s", err)
 	}
@@ -268,6 +279,10 @@ func (mc *mockClient) fetchCollectionID(scopeName string, collectionName string)
 
 func (mc *mockClient) getKvProvider() (kvProvider, error) {
 	return &mockKvOperator{}, nil
+}
+
+func (mc *mockClient) getQueryProvider() (queryProvider, error) {
+	return nil, nil
 }
 
 func TestMockingClient(t *testing.T) {

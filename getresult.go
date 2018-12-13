@@ -2,18 +2,13 @@ package gocb
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
 	"gopkg.in/couchbase/gocbcore.v7"
 )
-
-type getPartial struct {
-	path  string
-	bytes []byte
-	err   error
-}
 
 type GetResult struct {
 	id         string
@@ -21,8 +16,7 @@ type GetResult struct {
 	cas        Cas
 	expireAt   uint32
 	withExpiry bool
-	contents   map[string]interface{}
-	pathMap    map[string]int
+	contents   []byte
 }
 
 func (d *GetResult) Id() string {
@@ -42,49 +36,30 @@ func (d *GetResult) Expiry() time.Time {
 }
 
 func (d *GetResult) Content(valuePtr interface{}) error {
-	return json.Unmarshal(d.contents[""].([]byte), valuePtr)
+	return json.Unmarshal(d.contents, valuePtr)
 }
 
 func (d *GetResult) Decode(valuePtr interface{}, decode Decode) error {
 	if decode == nil {
 		decode = DefaultDecode
 	}
-	return decode(d.contents[""].([]byte), d.flags, valuePtr)
+	return decode(d.contents, d.flags, valuePtr)
 }
 
-// ContentAt retrieves the value of the operation by its path. The path is the path provided
-// to the operation.
-func (d *GetResult) ContentAt(path string, valuePtr interface{}) error {
-	currentPath := d.contents
-	var currentContent interface{}
-	var ok bool
-	for _, pathPart := range strings.Split(path, ".") {
-		currentContent, ok = currentPath[pathPart]
-		if !ok {
-			return errors.New("Subdoc path does not exist") //TODO: error
-		}
-		switch currentContent.(type) {
-		case map[string]interface{}:
-			currentPath = currentPath[pathPart].(map[string]interface{})
-		default:
-			break
-		}
-	}
-
-	err := json.Unmarshal(currentContent.([]byte), valuePtr)
-	if err != nil {
-		return errors.New("")
-	}
-
-	return nil
-}
-
-func (d *GetResult) fromSubDoc(ops []gocbcore.SubDocOp, result []gocbcore.SubDocResult) {
+func (d *GetResult) fromSubDoc(ops []gocbcore.SubDocOp, result []projectionResult) error {
 	content := make(map[string]interface{})
 	for i, op := range ops {
-		d.set(strings.Split(op.Path, "."), 0, content, result[i].Value)
+		d.set(strings.Split(op.Path, "."), 0, content, result[i].data)
 	}
-	d.contents = content
+	bytes, err := json.Marshal(content)
+	if err != nil {
+		return errors.New("someerror") // TODO
+	}
+	thing := string(bytes)
+	fmt.Println(thing)
+	d.contents = bytes
+
+	return nil
 }
 
 func (d *GetResult) set(path []string, i int, content map[string]interface{}, value interface{}) {
