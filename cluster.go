@@ -1,6 +1,7 @@
 package gocb
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -137,4 +138,12 @@ func (c *Cluster) authenticator() Authenticator {
 
 func (c *Cluster) connSpec() gocbconnstr.ConnSpec {
 	return c.cSpec
+}
+
+func (c *Cluster) Diagnostics(reportId string) (*DiagnosticsResult, error) {
+	return nil, errors.New("Not implemented")
+}
+
+func (c *Cluster) Manager() (*ClusterManager, error) {
+	return nil, errors.New("Not implemented")
 }
