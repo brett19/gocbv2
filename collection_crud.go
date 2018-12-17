@@ -70,7 +70,7 @@ type InsertOptions struct {
 }
 
 // Insert creates a new document in the Collection.
-func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (mutOut *MutationResult, errOut error) {
+func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (mutOut *StoreResult, errOut error) {
 	if opts == nil {
 		opts = &InsertOptions{}
 	}
@@ -133,7 +133,7 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &MutationResult{
+		mutOut = &StoreResult{
 			mt: mutTok,
 		}
 		mutOut.cas = Cas(res.Cas)
@@ -163,7 +163,7 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 }
 
 // Upsert creates a new document in the Collection if it does not exist, if it does exist then it updates it.
-func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (mutOut *MutationResult, errOut error) {
+func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (mutOut *StoreResult, errOut error) {
 	if opts == nil {
 		opts = &UpsertOptions{}
 	}
@@ -232,7 +232,7 @@ func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (m
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &MutationResult{
+		mutOut = &StoreResult{
 			mt: mutTok,
 		}
 		mutOut.cas = Cas(res.Cas)
@@ -276,7 +276,7 @@ type ReplaceOptions struct {
 }
 
 // Replace updates a document in the collection
-func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) (mutOut *MutationResult, errOut error) {
+func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) (mutOut *StoreResult, errOut error) {
 	if opts == nil {
 		opts = &ReplaceOptions{}
 	}
@@ -341,7 +341,7 @@ func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) 
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &MutationResult{
+		mutOut = &StoreResult{
 			mt: mutTok,
 		}
 		mutOut.cas = Cas(res.Cas)
@@ -507,7 +507,7 @@ type RemoveOptions struct {
 	WithDurability    DurabilityLevel
 }
 
-func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationResult, errOut error) {
+func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *StoreResult, errOut error) {
 	if opts == nil {
 		opts = &RemoveOptions{}
 	}
@@ -547,7 +547,7 @@ func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationRe
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &MutationResult{
+		mutOut = &StoreResult{
 			mt: mutTok,
 		}
 		mutOut.cas = Cas(res.Cas)
@@ -811,7 +811,7 @@ func (spec MutateSpec) ReplaceWithFlags(path string, val interface{}, flags Subd
 	return spec
 }
 
-func (c *Collection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (mutOut *MutationResult, errOut error) {
+func (c *Collection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (mutOut *StoreResult, errOut error) {
 	if opts == nil {
 		opts = &MutateOptions{}
 	}
@@ -856,7 +856,7 @@ func (c *Collection) Mutate(key string, spec MutateSpec, opts *MutateOptions) (m
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutRes := &MutationResult{
+		mutRes := &StoreResult{
 			mt: mutTok,
 		}
 		mutRes.cas = Cas(res.Cas)
