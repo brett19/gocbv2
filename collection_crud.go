@@ -410,7 +410,7 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 		if opts.WithExpiry {
 			expSpec := LookupInOptions{}.getWithFlags("$document.exptime", SubdocFlagXattr).Path("")
 			expSpec.Context = deadlinedCtx
-			result, err := c.lookupIn(deadlinedCtx, span.Context(), key, &expSpec)
+			result, err := c.lookupIn(deadlinedCtx, span.Context(), key, expSpec)
 			if err != nil {
 				errOut = err
 				return
@@ -429,7 +429,7 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 		docOut, errOut = c.get(deadlinedCtx, span.Context(), key, opts)
 		return
 	}
-	result, err := c.lookupIn(deadlinedCtx, span.Context(), key, opts.spec)
+	result, err := c.lookupIn(deadlinedCtx, span.Context(), key, *opts.spec)
 	if err != nil {
 		errOut = err
 		return
@@ -587,8 +587,12 @@ type LookupInOptions struct {
 	Timeout           time.Duration
 	spec              lookupSpec
 	ParentSpanContext opentracing.SpanContext
+	WithExpiry        bool
 }
 
+// Path indicates a path to be retrieved from the document.  The value of the path
+// can later be retrieved from the LookupResult.
+// The path syntax follows N1QL's path syntax (e.g. `foo.bar.baz`).
 func (opts LookupInOptions) Path(path string) LookupInOptions {
 	return opts.getWithFlags(path, SubdocFlagNone)
 }
@@ -608,10 +612,15 @@ func (opts LookupInOptions) getWithFlags(path string, flags SubdocFlag) LookupIn
 		Path:  path,
 		Flags: gocbcore.SubdocFlag(flags),
 	}
+
 	opts.spec.ops = append(opts.spec.ops, op)
 	return opts
 }
 
+// PathExists is similar to Path(), but does not actually retrieve the value from the server.
+// This may save bandwidth if you only need to check for the existence of a
+// path (without caring for its content). You can check the status of this
+// operation by using .ContentAt (and ignoring the value) or .Exists() on the LookupResult.
 func (opts LookupInOptions) PathExists(path string) LookupInOptions {
 	op := gocbcore.SubDocOp{
 		Op:    gocbcore.SubDocOpExists,
@@ -623,7 +632,8 @@ func (opts LookupInOptions) PathExists(path string) LookupInOptions {
 	return opts
 }
 
-func (c *Collection) LookupIn(ctx context.Context, key string, opts *LookupInOptions) (docOut *LookupInResult, errOut error) {
+// LookupIn performs a set of subdocument lookup operations on the document identified by key.
+func (c *Collection) LookupIn(key string, opts *LookupInOptions) (docOut *LookupInResult, errOut error) {
 	if opts == nil {
 		opts = &LookupInOptions{}
 	}
@@ -640,13 +650,23 @@ func (c *Collection) LookupIn(ctx context.Context, key string, opts *LookupInOpt
 	span := c.startKvOpTrace(opts.ParentSpanContext, "LookupIn")
 	defer span.Finish()
 
-	return c.lookupIn(ctx, span.Context(), key, opts)
+	return c.lookupIn(deadlinedCtx, span.Context(), key, *opts)
 }
 
-func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts *LookupInOptions) (docOut *LookupInResult, errOut error) {
+func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts LookupInOptions) (docOut *LookupInResult, errOut error) {
 	collectionID, agent, err := c.getKvProviderAndId()
 	if err != nil {
 		return nil, err
+	}
+
+	if opts.WithExpiry {
+		op := gocbcore.SubDocOp{
+			Op:    gocbcore.SubDocOpGet,
+			Path:  "$document.exptime",
+			Flags: gocbcore.SubdocFlag(SubdocFlagXattr),
+		}
+
+		opts.spec.ops = append([]gocbcore.SubDocOp{op}, opts.spec.ops...)
 	}
 
 	waitCh := make(chan struct{})
@@ -678,6 +698,13 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 				if opRes.Value != nil {
 					resSet.contents[i].data = append([]byte(nil), opRes.Value...)
 				}
+			}
+
+			if opts.WithExpiry {
+				// if expiry was requested then extract and remove it from the results
+				resSet.withExpiry = true
+				resSet.ContentAt(0, &resSet.expireAt)
+				resSet.contents = resSet.contents[1:]
 			}
 
 			docOut = resSet

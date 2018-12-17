@@ -2,13 +2,16 @@ package gocb
 
 import (
 	"encoding/json"
+	"time"
 )
 
 // LookupInResult is the return type for LookupIn.
 type LookupInResult struct {
-	cas      Cas
-	contents []lookupInPartial
-	pathMap  map[string]int
+	cas        Cas
+	contents   []lookupInPartial
+	pathMap    map[string]int
+	expireAt   uint32
+	withExpiry bool
 }
 
 type lookupInPartial struct {
@@ -52,4 +55,14 @@ func (lir *LookupInResult) ContentAt(idx int, valuePtr interface{}) error {
 // Exists verifies that the item at idx exists.
 func (lir *LookupInResult) Exists(idx int) bool {
 	return lir.contents[idx].exists()
+}
+
+// HasExpiry verifies whether or not the result has an expiry set on it.
+func (lir *LookupInResult) HasExpiry() bool {
+	return lir.withExpiry
+}
+
+// Expiry is the expiry value for the document related to the result.
+func (lir *LookupInResult) Expiry() time.Time {
+	return time.Unix(int64(lir.expireAt), 0)
 }
