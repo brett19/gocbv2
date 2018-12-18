@@ -238,7 +238,7 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 	}
 
 	// Work out which timeout to use, the cluster level default or query specific one
-	timeout := c.N1qlTimeout()
+	timeout := c.n1qlTimeout()
 	var optTimeout time.Duration
 	tmostr, castok := queryOpts["timeout"].(string)
 	if castok {

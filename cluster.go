@@ -11,6 +11,7 @@ import (
 	"gopkg.in/couchbaselabs/gocbconnstr.v1"
 )
 
+// Cluster represents a connection to a specific Couchbase cluster.
 type Cluster struct {
 	cSpec gocbconnstr.ConnSpec
 	auth  Authenticator
@@ -25,7 +26,44 @@ type Cluster struct {
 	ssb servicesStateBlock
 }
 
-func Connect(connStr string, auth Authenticator) (*Cluster, error) {
+// ClusterOptions is the set of options available for creating a Cluster.
+type ClusterOptions struct {
+	Authenticator Authenticator
+}
+
+// NewCluster creates and returns a Cluster instance created using the provided options and connection string.
+// The connection string properties are copied from (and should stay in sync with) the gocbcore agent.FromConnStr comment.
+// Supported connSpecStr options are:
+//   cacertpath (string) - Path to the CA certificate
+//   certpath (string) - Path to your authentication certificate
+//   keypath (string) - Path to your authentication key
+//   config_total_timeout (int) - Maximum period to attempt to connect to cluster in ms.
+//   config_node_timeout (int) - Maximum period to attempt to connect to a node in ms.
+//   http_redial_period (int) - Maximum period to keep HTTP config connections open in ms.
+//   http_retry_delay (int) - Period to wait between retrying nodes for HTTP config in ms.
+//   config_poll_floor_interval (int) - Minimum time to wait between fetching configs via CCCP in ms.
+//   config_poll_interval (int) - Period to wait between CCCP config polling in ms.
+//   kv_pool_size (int) - The number of connections to establish per node.
+//   max_queue_size (int) - The maximum size of the operation queues per node.
+//   use_kverrmaps (bool) - Whether to enable error maps from the server.
+//   use_enhanced_errors (bool) - Whether to enable enhanced error information.
+//   fetch_mutation_tokens (bool) - Whether to fetch mutation tokens for operations.
+//   compression (bool) - Whether to enable network-wise compression of documents.
+//   compression_min_size (int) - The minimal size of the document to consider compression.
+//   compression_min_ratio (float64) - The minimal compress ratio (compressed / original) for the document to be sent compressed.
+//   server_duration (bool) - Whether to enable fetching server operation durations.
+//   http_max_idle_conns (int) - Maximum number of idle http connections in the pool.
+//   http_max_idle_conns_per_host (int) - Maximum number of idle http connections in the pool per host.
+//   http_idle_conn_timeout (int) - Maximum length of time for an idle connection to stay in the pool in ms.
+//   network (string) - The network type to use.
+//   orphaned_response_logging (bool) - Whether to enable orphan response logging.
+//   orphaned_response_logging_interval (int) - How often to log orphan responses in ms.
+//   orphaned_response_logging_sample_size (int) - The number of samples to include in each orphaned response log.
+//   operation_tracing (bool) - Whether to enable tracing.
+//   n1ql_timeout (int) - Maximum execution time for n1ql queries in ms.
+//   fts_timeout (int) - Maximum execution time for fts searches in ms.
+//   analytics_timeout (int) - Maximum execution time for analytics queries in ms.
+func NewCluster(connStr string, opts ClusterOptions) (*Cluster, error) {
 	connSpec, err := gocbconnstr.Parse(connStr)
 	if err != nil {
 		return nil, err
@@ -33,7 +71,7 @@ func Connect(connStr string, auth Authenticator) (*Cluster, error) {
 
 	cluster := &Cluster{
 		cSpec:       connSpec,
-		auth:        auth,
+		auth:        opts.Authenticator,
 		connections: make(map[string]client),
 		ssb: servicesStateBlock{
 			n1qlTimeout: 75 * time.Second,
@@ -76,6 +114,7 @@ func (c *Cluster) parseExtraConnStrOptions(spec gocbconnstr.ConnSpec) error {
 	return nil
 }
 
+// Bucket connects the cluster to server(s) and returns a new Bucket instance.
 func (c *Cluster) Bucket(bucketName string, opts *BucketOptions) (*Bucket, error) {
 	if opts == nil {
 		opts = &BucketOptions{}
@@ -88,6 +127,7 @@ func (c *Cluster) Bucket(bucketName string, opts *BucketOptions) (*Bucket, error
 	return b, nil
 }
 
+// Close shuts down all buckets in this cluster and invalidates any references this cluster has.
 func (c *Cluster) Close() error {
 	return nil
 }
@@ -105,16 +145,6 @@ func (c *Cluster) getClient(sb *clientStateBlock) client {
 	c.connections[hash] = client
 
 	return client
-}
-
-// N1qlTimeout returns the maximum time to wait for a cluster-level N1QL query to complete.
-func (c *Cluster) N1qlTimeout() time.Duration {
-	return c.ssb.n1qlTimeout
-}
-
-// SetN1qlTimeout sets the maximum time to wait for a cluster-level N1QL query to complete.
-func (c *Cluster) SetN1qlTimeout(timeout time.Duration) {
-	c.ssb.n1qlTimeout = timeout
 }
 
 func (c *Cluster) randomClient() (client, error) {
@@ -140,11 +170,25 @@ func (c *Cluster) connSpec() gocbconnstr.ConnSpec {
 	return c.cSpec
 }
 
-func (c *Cluster) Diagnostics(reportId string) (*DiagnosticsResult, error) {
+// Diagnostics returns information about the internal state of the SDK.
+//
+// Experimental: This API is subject to change at any time.
+func (c *Cluster) Diagnostics(reportID string) (*DiagnosticsResult, error) {
 	return nil, errors.New("Not implemented")
 }
 
-func (c *Cluster) Manager() (*ClusterManager, error) {
+// Users returns a new UsersManager for the Cluster.
+func (c *Cluster) Users() (*UsersManager, error) {
+	return nil, errors.New("Not implemented")
+}
+
+// Buckets returns a new BucketsManager for the Cluster.
+func (c *Cluster) Buckets() (*BucketsManager, error) {
+	return nil, errors.New("Not implemented")
+}
+
+// QueryIndexes returns a new QueryIndexesManager for the Cluster.
+func (c *Cluster) QueryIndexes() (*QueryIndexesManager, error) {
 	return nil, errors.New("Not implemented")
 }
 
@@ -160,4 +204,8 @@ func (c *Cluster) getQueryProvider() (queryProvider, error) {
 	}
 
 	return provider, nil
+}
+
+func (c *Cluster) n1qlTimeout() time.Duration {
+	return c.ssb.n1qlTimeout
 }
