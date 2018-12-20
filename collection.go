@@ -99,11 +99,11 @@ func (c *Collection) getKvProviderAndId() (uint32, kvProvider, error) {
 	}
 
 	if c.scopeUnknown() {
-		return 0, nil, gocbcore.ErrScopeUnknown // TODO: probably not how we want to do this
+		return 0, nil, kvError{gocbcore.ErrScopeUnknown} // TODO: probably not how we want to do this
 	}
 
 	if c.collectionUnknown() {
-		return 0, nil, gocbcore.ErrCollectionUnknown // TODO: probably not how we want to do this
+		return 0, nil, kvError{gocbcore.ErrCollectionUnknown} // TODO: probably not how we want to do this
 	}
 
 	if c.initialized() {
@@ -114,9 +114,11 @@ func (c *Collection) getKvProviderAndId() (uint32, kvProvider, error) {
 	if err != nil {
 		if gocbcore.IsErrorStatus(err, gocbcore.StatusScopeUnknown) { //TODO: is this how we want to do this?
 			c.setScopeUnknown()
+			return 0, nil, kvError{gocbcore.ErrScopeUnknown}
 		}
 		if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) { //TODO: is this how we want to do this?
 			c.setCollectionUnknown()
+			return 0, nil, kvError{gocbcore.ErrCollectionUnknown}
 		}
 		return 0, nil, err
 	}
@@ -141,6 +143,8 @@ func (c *Collection) WithOperationTimeout(duration time.Duration) *Collection {
 	return n
 }
 
+// startKvOpTrace starts a new span for a given operationName. If parentSpanCtx is not nil then the span will be a
+// ChildOf that span context.
 func (c *Collection) startKvOpTrace(parentSpanCtx opentracing.SpanContext, operationName string) opentracing.Span {
 	var span opentracing.Span
 	if parentSpanCtx == nil {

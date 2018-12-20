@@ -1,9 +1,11 @@
 package gocb
 
+// Bucket is an interface representing a single bucket within a cluster.
 type Bucket struct {
 	sb stateBlock
 }
 
+// BucketOptions are the options available when connecting to a Bucket.
 type BucketOptions struct {
 	UseMutationTokens bool
 }
@@ -31,24 +33,28 @@ func (b *Bucket) clone() *Bucket {
 	return &newB
 }
 
+// Name returns the name of the bucket.
 func (b *Bucket) Name() string {
 	return b.sb.BucketName
 }
 
+// Scope returns an instance of a Scope.
 func (b *Bucket) Scope(scopeName string) *Scope {
 	return newScope(b, scopeName)
 }
 
-func (b *Bucket) DefaultScope() *Scope {
+func (b *Bucket) defaultScope() *Scope {
 	return b.Scope("_default")
 }
 
+// Collection returns an instance of a collection.
 func (b *Bucket) Collection(scopeName string, collectionName string) *Collection {
 	return b.Scope(scopeName).Collection(collectionName)
 }
 
+// DefaultCollection returns an instance of the default collection.
 func (b *Bucket) DefaultCollection() *Collection {
-	return b.DefaultScope().DefaultCollection()
+	return b.defaultScope().DefaultCollection()
 }
 
 func (b *Bucket) Views() *ViewsManager {

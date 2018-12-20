@@ -91,6 +91,7 @@ func (c *stdClient) getQueryProvider() (queryProvider, error) {
 	return c.agent, nil
 }
 
+// TODO: we need to deadline this
 func (c *stdClient) fetchCollectionManifest() (bytesOut []byte, errOut error) {
 	if c.agent == nil {
 		errOut = errors.New("Cluster not yet connected")

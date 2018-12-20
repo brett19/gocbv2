@@ -1,21 +1,10 @@
 package gocb
 
 import (
-	"fmt"
-
 	"gopkg.in/couchbase/gocbcore.v7"
 
 	"github.com/pkg/errors"
 )
-
-// BucketMissingError occurs when the application attempts to open or use a bucket which does exist or is not available at that time.
-type BucketMissingError struct {
-	bucketName string
-}
-
-func (bme BucketMissingError) Error() string {
-	return fmt.Sprintf("The requested bucket %s cannot be found", bme.bucketName)
-}
 
 type retryAbleError interface {
 	isRetryable() bool
@@ -29,11 +18,12 @@ type retryAbleError interface {
 // 	Payload    interface{}
 // }
 
-type KvError struct {
+type kvError struct {
 	err error
 }
 
-func IsCasMismatch(err error) bool {
+// IsCasMismatchError verifies whether or not the cause for an error is a cas mismatch
+func IsCasMismatchError(err error) bool {
 	cause := errors.Cause(err)
 	if kvError, ok := cause.(*gocbcore.KvError); ok {
 		return gocbcore.IsErrorStatus(kvError, gocbcore.StatusKeyExists)
@@ -42,26 +32,47 @@ func IsCasMismatch(err error) bool {
 	return false
 }
 
-func (err KvError) Error() string {
+// IsScopeUnknownError verifies whether or not the cause for an error is scope unknown
+func IsScopeUnknownError(err error) bool {
+	cause := errors.Cause(err)
+	if kvError, ok := cause.(*gocbcore.KvError); ok {
+		return gocbcore.IsErrorStatus(kvError, gocbcore.StatusScopeUnknown)
+	}
+
+	return false
+}
+
+// IsCollectionUnknownError verifies whether or not the cause for an error is scope unknown
+func IsCollectionUnknownError(err error) bool {
+	cause := errors.Cause(err)
+	if kvError, ok := cause.(*gocbcore.KvError); ok {
+		return gocbcore.IsErrorStatus(kvError, gocbcore.StatusCollectionUnknown)
+	}
+
+	return false
+}
+
+func (err kvError) Error() string {
 	return err.err.Error()
 }
 
-func (err KvError) Cause() error {
+func (err kvError) Cause() error {
 	return err.err
 }
 
 // TimeoutError occurs when an operation times out
-type TimeoutError struct {
+type timeoutError struct {
 	err error
 }
 
-func (err TimeoutError) Error() string {
+func (err timeoutError) Error() string {
 	return err.err.Error()
 }
 
+// IsTimeoutError verifies whether or not the cause for an error is a timeout
 func IsTimeoutError(err error) bool {
 	cause := errors.Cause(err)
-	if _, ok := cause.(TimeoutError); ok {
+	if _, ok := cause.(timeoutError); ok {
 		return true
 	}
 
