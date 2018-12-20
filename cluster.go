@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/couchbase/gocbcore"
 	opentracing "github.com/opentracing/opentracing-go"
 	"gopkg.in/couchbaselabs/gocbconnstr.v1"
 )
@@ -29,6 +30,10 @@ type Cluster struct {
 // ClusterOptions is the set of options available for creating a Cluster.
 type ClusterOptions struct {
 	Authenticator Authenticator
+}
+
+// ClusterCloseOptions is the set of options available when disconnecting from a Cluster.
+type ClusterCloseOptions struct {
 }
 
 // NewCluster creates and returns a Cluster instance created using the provided options and connection string.
@@ -127,11 +132,6 @@ func (c *Cluster) Bucket(bucketName string, opts *BucketOptions) (*Bucket, error
 	return b, nil
 }
 
-// Close shuts down all buckets in this cluster and invalidates any references this cluster has.
-func (c *Cluster) Close() error {
-	return nil
-}
-
 func (c *Cluster) getClient(sb *clientStateBlock) client {
 	c.connectionsLock.Lock()
 	defer c.connectionsLock.Unlock()
@@ -190,6 +190,25 @@ func (c *Cluster) Buckets() (*BucketsManager, error) {
 // QueryIndexes returns a new QueryIndexesManager for the Cluster.
 func (c *Cluster) QueryIndexes() (*QueryIndexesManager, error) {
 	return nil, errors.New("Not implemented")
+}
+
+// Close shuts down all buckets in this cluster and invalidates any references this cluster has.
+func (c *Cluster) Close(opts *ClusterCloseOptions) error {
+	var overallErr error
+
+	c.clusterLock.Lock()
+	for key, conn := range c.connections {
+		err := conn.close()
+		if err != nil && gocbcore.ErrorCause(err) != gocbcore.ErrShutdown {
+			logWarnf("Failed to close a client in cluster close: %s", err)
+			overallErr = err
+		}
+
+		delete(c.connections, key)
+	}
+	c.clusterLock.Unlock()
+
+	return overallErr
 }
 
 func (c *Cluster) getQueryProvider() (queryProvider, error) {

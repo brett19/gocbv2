@@ -16,6 +16,7 @@ type client interface {
 	fetchCollectionID(scopeName string, collectionName string) (uint32, uint32, error)
 	getKvProvider() (kvProvider, error)
 	getQueryProvider() (queryProvider, error)
+	close() error
 }
 
 type stdClient struct {
@@ -156,4 +157,11 @@ func (c *stdClient) fetchCollectionID(scopeName string, collectionName string) (
 	collectionID := uint32(foundCollection.UID)
 
 	return scopeID, collectionID, nil
+}
+
+func (c *stdClient) close() error {
+	if c.agent == nil {
+		return errors.New("Cluster not yet connected") //TODO
+	}
+	return c.agent.Close()
 }
