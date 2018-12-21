@@ -9,6 +9,7 @@ import (
 	"gopkg.in/couchbase/gocbcore.v7"
 )
 
+// GetResult is the return type of Get operations.
 type GetResult struct {
 	id         string
 	flags      uint32
@@ -18,26 +19,33 @@ type GetResult struct {
 	contents   []byte
 }
 
-func (d *GetResult) Id() string {
+// ID returns the id of the result.
+func (d *GetResult) ID() string {
 	return d.id
 }
 
+// Cas returns the cas of the result.
 func (d *GetResult) Cas() Cas {
 	return d.cas
 }
 
+// HasExpiry verifies whether or not the result has an expiry value.
 func (d *GetResult) HasExpiry() bool {
 	return d.withExpiry
 }
 
+// Expiry returns the expiry value for the result.
 func (d *GetResult) Expiry() time.Time {
 	return time.Unix(int64(d.expireAt), 0)
 }
 
+// Content assigns the value of the result into the valuePtr using json unmarshalling.
 func (d *GetResult) Content(valuePtr interface{}) error {
 	return json.Unmarshal(d.contents, valuePtr)
 }
 
+// Decode assigns the value of the result into the valuePtr using the docde function
+// specified.
 func (d *GetResult) Decode(valuePtr interface{}, decode Decode) error {
 	if decode == nil {
 		decode = DefaultDecode
@@ -47,14 +55,20 @@ func (d *GetResult) Decode(valuePtr interface{}, decode Decode) error {
 
 func (d *GetResult) fromSubDoc(ops []gocbcore.SubDocOp, result *LookupInResult) error {
 	content := make(map[string]interface{})
-	for i, op := range ops {
-		d.set(strings.Split(op.Path, "."), 0, content, result.contents[i].data)
+	if len(ops) == 1 && ops[0].Path == "" {
+		// This is a special case where the subdoc was a sole fulldoc
+		d.contents = result.contents[0].data
+	} else {
+		for i, op := range ops {
+			d.set(strings.Split(op.Path, "."), 0, content, result.contents[i].data)
+		}
+
+		bytes, err := json.Marshal(content)
+		if err != nil {
+			return errors.New("someerror") // TODO
+		}
+		d.contents = bytes
 	}
-	bytes, err := json.Marshal(content)
-	if err != nil {
-		return errors.New("someerror") // TODO
-	}
-	d.contents = bytes
 
 	return nil
 }

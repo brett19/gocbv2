@@ -416,38 +416,36 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	if opts.spec == nil {
-		if opts.WithExpiry {
-			expSpec := LookupInOptions{}.getWithFlags("$document.exptime", SubdocFlagXattr).Path("")
-			expSpec.Context = deadlinedCtx
-			result, err := c.lookupIn(deadlinedCtx, span.Context(), key, expSpec)
-			if err != nil {
-				errOut = err
-				return
-			}
-
-			doc := &GetResult{}
-			doc.withExpiry = true
-
-			result.ContentAt(0, &doc.expireAt)
-			result.ContentAt(1, &doc.contents)
-
-			docOut = doc
-			return
-		}
-
+	if opts.spec == nil && !opts.WithExpiry {
+		// No projection and no expiry so standard fulldoc
 		docOut, errOut = c.get(deadlinedCtx, span.Context(), key, opts)
+		docOut.id = key
 		return
 	}
 
-	result, err := c.lookupIn(deadlinedCtx, span.Context(), key, *opts.spec)
+	spec := opts.spec
+	if spec == nil {
+		// This is a subdoc full doc
+		spec = &LookupInOptions{Context: deadlinedCtx, WithExpiry: opts.WithExpiry}
+		*spec = spec.Path("")
+	}
+
+	// If len is > 16 then we have to convert to fulldoc
+	if len(spec.spec.ops) > 16 {
+		*spec = spec.Path("")
+	}
+
+	result, err := c.lookupIn(deadlinedCtx, span.Context(), key, *spec)
 	if err != nil {
 		errOut = err
 		return
 	}
 
 	doc := &GetResult{}
-	doc.fromSubDoc(opts.spec.spec.ops, result)
+	doc.withExpiry = result.withExpiry
+	doc.expireAt = result.expireAt
+	doc.id = key
+	doc.fromSubDoc(spec.spec.ops, result)
 	docOut = doc
 
 	return
@@ -646,6 +644,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 		return nil, err
 	}
 
+	spec := opts.spec
 	if opts.WithExpiry {
 		op := gocbcore.SubDocOp{
 			Op:    gocbcore.SubDocOpGet,
@@ -653,14 +652,33 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 			Flags: gocbcore.SubdocFlag(SubdocFlagXattr),
 		}
 
-		opts.spec.ops = append([]gocbcore.SubDocOp{op}, opts.spec.ops...)
+		spec.ops = append([]gocbcore.SubDocOp{op}, spec.ops...)
+	}
+
+	if len(spec.ops) > 16 {
+		spec = lookupSpec{}
+		op := gocbcore.SubDocOp{
+			Op:    gocbcore.SubDocOpGetDoc,
+			Flags: gocbcore.SubdocFlag(spec.flags),
+		}
+		spec.ops = append(spec.ops, op)
+
+		if opts.WithExpiry {
+			op := gocbcore.SubDocOp{
+				Op:    gocbcore.SubDocOpGet,
+				Path:  "$document.exptime",
+				Flags: gocbcore.SubdocFlag(SubdocFlagXattr),
+			}
+
+			spec.ops = append([]gocbcore.SubDocOp{op}, spec.ops...)
+		}
 	}
 
 	ctrl := c.newOpManager(ctx)
 	err = ctrl.Wait(agent.LookupInEx(gocbcore.LookupInOptions{
 		Key:          []byte(key),
-		Flags:        opts.spec.flags,
-		Ops:          opts.spec.ops,
+		Flags:        spec.flags,
+		Ops:          spec.ops,
 		CollectionID: collectionID,
 		TraceContext: traceCtx,
 	}, func(res *gocbcore.LookupInResult, err error) {
@@ -676,7 +694,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 		if res != nil {
 			resSet := &LookupInResult{}
 			resSet.cas = Cas(res.Cas)
-			resSet.contents = make([]lookupInPartial, len(opts.spec.ops))
+			resSet.contents = make([]lookupInPartial, len(spec.ops))
 
 			for i, opRes := range res.Ops {
 				// resSet.contents[i].path = opts.spec.ops[i].Path
