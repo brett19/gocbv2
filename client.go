@@ -1,7 +1,6 @@
 package gocb
 
 import (
-	"encoding/json"
 	"errors"
 	"sync"
 	"time"
@@ -13,7 +12,7 @@ type client interface {
 	Hash() string
 	connect() error
 	fetchCollectionManifest() (bytesOut []byte, errOut error)
-	fetchCollectionID(scopeName string, collectionName string) (uint32, uint32, error)
+	fetchCollectionID(scopeName string, collectionName string) (uint32, error)
 	getKvProvider() (kvProvider, error)
 	getQueryProvider() (queryProvider, error)
 	close() error
@@ -100,6 +99,17 @@ func (c *stdClient) fetchCollectionManifest() (bytesOut []byte, errOut error) {
 
 	waitCh := make(chan struct{})
 
+	c.agent.GetCollectionID("_default", "_default", func(manifestID uint64, collectionID uint32, err error) {
+		if err != nil {
+			errOut = err
+			waitCh <- struct{}{}
+			return
+		}
+
+		// bytesOut = bytes
+		waitCh <- struct{}{}
+	})
+
 	c.agent.GetCollectionManifest(func(bytes []byte, err error) {
 		if err != nil {
 			errOut = err
@@ -116,48 +126,33 @@ func (c *stdClient) fetchCollectionManifest() (bytesOut []byte, errOut error) {
 	return
 }
 
-func (c *stdClient) fetchCollectionID(scopeName string, collectionName string) (uint32, uint32, error) {
+func (c *stdClient) fetchCollectionID(scopeName string, collectionName string) (uint32, error) {
 	if scopeName == "_default" && collectionName == "_default" {
-		return 0, 0, nil
+		return 0, nil
 	}
 
-	manifestBytes, err := c.fetchCollectionManifest()
-	if err != nil {
-		return 0, 0, err
+	if c.agent == nil {
+		return 0, errors.New("Cluster not yet connected")
 	}
 
-	var manifest gocbcore.CollectionManifest
-	err = json.Unmarshal(manifestBytes, &manifest)
-	if err != nil {
-		return 0, 0, err
-	}
+	waitCh := make(chan struct{})
+	var collectionID uint32
+	var colErr error
 
-	var foundScope *gocbcore.CollectionManifestScope
-	for _, scope := range manifest.Scopes {
-		if scope.Name == scopeName {
-			foundScope = &scope
-			break
+	c.agent.GetCollectionID(scopeName, collectionName, func(manifestID uint64, cid uint32, err error) {
+		if err != nil {
+			colErr = err
+			waitCh <- struct{}{}
+			return
 		}
-	}
-	if foundScope == nil {
-		return 0, 0, errors.New("Invalid Scope Name")
-	}
 
-	var foundCollection *gocbcore.CollectionManifestCollection
-	for _, coll := range foundScope.Collections {
-		if coll.Name == collectionName {
-			foundCollection = &coll
-			break
-		}
-	}
-	if foundCollection == nil {
-		return 0, 0, gocbcore.ErrCollectionUnknown //TODO: won't be how we want to do this
-	}
+		collectionID = cid
+		waitCh <- struct{}{}
+	})
 
-	scopeID := uint32(foundScope.UID)
-	collectionID := uint32(foundCollection.UID)
+	<-waitCh
 
-	return scopeID, collectionID, nil
+	return collectionID, colErr
 }
 
 func (c *stdClient) close() error {

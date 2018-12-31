@@ -33,7 +33,7 @@ type Collection struct {
 	lock sync.Mutex
 }
 
-func (c *Collection) setCollectionID(scopeID uint32, collectionID uint32) error {
+func (c *Collection) setCollectionID(collectionID uint32) error {
 	if c.initialized() {
 		return errors.New("collection already initialized")
 	}
@@ -41,7 +41,7 @@ func (c *Collection) setCollectionID(scopeID uint32, collectionID uint32) error 
 	c.lock.Lock()
 	c.csb.CollectionInitialized = true
 	c.csb.CollectionID = collectionID
-	c.csb.ScopeID = scopeID
+	// c.csb.ScopeID = scopeID
 	c.lock.Unlock()
 
 	return nil
@@ -110,12 +110,8 @@ func (c *Collection) getKvProviderAndId() (uint32, kvProvider, error) {
 		return c.collectionID(), agent, nil
 	}
 
-	scopeID, collectionID, err := client.fetchCollectionID(c.sb.ScopeName, c.sb.CollectionName)
+	collectionID, err := client.fetchCollectionID(c.sb.ScopeName, c.sb.CollectionName)
 	if err != nil {
-		if gocbcore.IsErrorStatus(err, gocbcore.StatusScopeUnknown) { //TODO: is this how we want to do this?
-			c.setScopeUnknown()
-			return 0, nil, kvError{gocbcore.ErrScopeUnknown}
-		}
 		if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) { //TODO: is this how we want to do this?
 			c.setCollectionUnknown()
 			return 0, nil, kvError{gocbcore.ErrCollectionUnknown}
@@ -123,7 +119,7 @@ func (c *Collection) getKvProviderAndId() (uint32, kvProvider, error) {
 		return 0, nil, err
 	}
 
-	c.setCollectionID(scopeID, collectionID)
+	c.setCollectionID(collectionID)
 
 	return collectionID, agent, nil
 }
