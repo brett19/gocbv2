@@ -1,6 +1,7 @@
 package gocb
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -12,7 +13,7 @@ type client interface {
 	Hash() string
 	connect() error
 	fetchCollectionManifest() (bytesOut []byte, errOut error)
-	fetchCollectionID(scopeName string, collectionName string) (uint32, error)
+	fetchCollectionID(ctx context.Context, scopeName string, collectionName string) (uint32, error)
 	getKvProvider() (kvProvider, error)
 	getQueryProvider() (queryProvider, error)
 	close() error
@@ -126,7 +127,7 @@ func (c *stdClient) fetchCollectionManifest() (bytesOut []byte, errOut error) {
 	return
 }
 
-func (c *stdClient) fetchCollectionID(scopeName string, collectionName string) (uint32, error) {
+func (c *stdClient) fetchCollectionID(ctx context.Context, scopeName string, collectionName string) (uint32, error) {
 	if scopeName == "_default" && collectionName == "_default" {
 		return 0, nil
 	}
@@ -139,7 +140,7 @@ func (c *stdClient) fetchCollectionID(scopeName string, collectionName string) (
 	var collectionID uint32
 	var colErr error
 
-	c.agent.GetCollectionID(scopeName, collectionName, func(manifestID uint64, cid uint32, err error) {
+	op, err := c.agent.GetCollectionID(scopeName, collectionName, func(manifestID uint64, cid uint32, err error) {
 		if err != nil {
 			colErr = err
 			waitCh <- struct{}{}
@@ -149,8 +150,23 @@ func (c *stdClient) fetchCollectionID(scopeName string, collectionName string) (
 		collectionID = cid
 		waitCh <- struct{}{}
 	})
+	if err != nil {
+		return 0, err
+	}
 
-	<-waitCh
+	select {
+	case <-ctx.Done():
+		if op.Cancel() {
+			if err == context.DeadlineExceeded {
+				colErr = timeoutError{err: ctx.Err()}
+			} else {
+				colErr = ctx.Err()
+			}
+		} else {
+			<-waitCh
+		}
+	case <-waitCh:
+	}
 
 	return collectionID, colErr
 }

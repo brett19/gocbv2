@@ -148,7 +148,7 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 		expiry = uint32(opts.ExpireAt.Unix())
 	}
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 	if err != nil {
 		errOut = err
 		return
@@ -233,7 +233,7 @@ func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (m
 
 	log.Printf("Fetching Agent")
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 	if err != nil {
 		errOut = err
 		return
@@ -325,7 +325,7 @@ func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) 
 
 	log.Printf("Fetching Agent")
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -453,7 +453,7 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 
 // get performs a full document fetch against the collection
 func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts *GetOptions) (docOut *GetResult, errOut error) {
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -522,7 +522,7 @@ func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *StoreResul
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -639,7 +639,7 @@ func (c *Collection) LookupIn(key string, opts *LookupInOptions) (docOut *Lookup
 }
 
 func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts LookupInOptions) (docOut *LookupInResult, errOut error) {
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -818,7 +818,7 @@ func (c *Collection) Mutate(key string, opts MutateInOptions) (mutOut *StoreResu
 	span := c.startKvOpTrace(opts.ParentSpanContext, "MutateIn")
 	defer span.Finish()
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -886,7 +886,7 @@ func (c *Collection) GetAndTouch(key string, opts *GetAndTouchOptions) (docOut *
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -960,7 +960,7 @@ func (c *Collection) GetAndLock(key string, opts *GetAndLockOptions) (docOut *Ge
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -1027,7 +1027,7 @@ func (c *Collection) Unlock(key string, opts *UnlockOptions) (mutOut *StoreResul
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -1094,7 +1094,7 @@ func (c *Collection) Touch(key string, opts *GetAndTouchOptions) (mutOut *StoreR
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -1196,7 +1196,7 @@ func (c *Collection) Counter(key string, opts *CounterOptions) (mutOut *StoreRes
 func (c *Collection) counterInc(ctx context.Context, tracectx opentracing.SpanContext, key string,
 	delta, initial uint64, expiry uint32) (mutOut *StoreResult, errOut error) {
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1241,7 +1241,7 @@ func (c *Collection) counterInc(ctx context.Context, tracectx opentracing.SpanCo
 func (c *Collection) counterDec(ctx context.Context, tracectx opentracing.SpanContext, key string,
 	delta, initial uint64, expiry uint32) (mutOut *StoreResult, errOut error) {
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1308,7 +1308,7 @@ func (c *Collection) BinaryAppend(key string, val []byte, opts *AppendOptions) (
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -1373,7 +1373,7 @@ func (c *Collection) BinaryPrepend(key string, val []byte, opts *PrependOptions)
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndId()
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -1427,7 +1427,7 @@ func (c *Collection) BinaryPrepend(key string, val []byte, opts *PrependOptions)
 // 		opts = &GetReplicaOptions{}
 // 	}
 
-// 	collectionID, agent, err := c.getKvProviderAndId()
+// 	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 // 	if err != nil {
 // 		return nil, err
 // 	}

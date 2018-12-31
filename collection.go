@@ -1,6 +1,7 @@
 package gocb
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -91,7 +92,7 @@ func (c *Collection) clone() *Collection {
 	return &newC
 }
 
-func (c *Collection) getKvProviderAndId() (uint32, kvProvider, error) {
+func (c *Collection) getKvProviderAndID(ctx context.Context) (uint32, kvProvider, error) {
 	client := c.sb.getClient()
 	agent, err := client.getKvProvider()
 	if err != nil {
@@ -110,7 +111,7 @@ func (c *Collection) getKvProviderAndId() (uint32, kvProvider, error) {
 		return c.collectionID(), agent, nil
 	}
 
-	collectionID, err := client.fetchCollectionID(c.sb.ScopeName, c.sb.CollectionName)
+	collectionID, err := client.fetchCollectionID(ctx, c.sb.ScopeName, c.sb.CollectionName)
 	if err != nil {
 		if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) { //TODO: is this how we want to do this?
 			c.setCollectionUnknown()
