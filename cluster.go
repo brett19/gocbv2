@@ -192,6 +192,11 @@ func (c *Cluster) QueryIndexes() (*QueryIndexesManager, error) {
 	return nil, errors.New("Not implemented")
 }
 
+// Nodes returns a new NodeManger for the Cluster.
+func (c *Cluster) Nodes() (*NodeManger, error) {
+	return nil, errors.New("Not implemented")
+}
+
 // Close shuts down all buckets in this cluster and invalidates any references this cluster has.
 func (c *Cluster) Close(opts *ClusterCloseOptions) error {
 	var overallErr error
