@@ -19,11 +19,6 @@ type GetResult struct {
 	contents   []byte
 }
 
-// ID returns the id of the result.
-func (d *GetResult) ID() string {
-	return d.id
-}
-
 // Cas returns the cas of the result.
 func (d *GetResult) Cas() Cas {
 	return d.cas
@@ -44,7 +39,7 @@ func (d *GetResult) Content(valuePtr interface{}) error {
 	return json.Unmarshal(d.contents, valuePtr)
 }
 
-// Decode assigns the value of the result into the valuePtr using the docde function
+// Decode assigns the value of the result into the valuePtr using the decode function
 // specified.
 func (d *GetResult) Decode(valuePtr interface{}, decode Decode) error {
 	if decode == nil {
@@ -58,17 +53,18 @@ func (d *GetResult) fromSubDoc(ops []gocbcore.SubDocOp, result *LookupInResult) 
 	if len(ops) == 1 && ops[0].Path == "" {
 		// This is a special case where the subdoc was a sole fulldoc
 		d.contents = result.contents[0].data
-	} else {
-		for i, op := range ops {
-			d.set(strings.Split(op.Path, "."), 0, content, result.contents[i].data)
-		}
-
-		bytes, err := json.Marshal(content)
-		if err != nil {
-			return errors.New("someerror") // TODO
-		}
-		d.contents = bytes
+		return nil
 	}
+
+	for i, op := range ops {
+		d.set(strings.Split(op.Path, "."), 0, content, result.contents[i].data)
+	}
+
+	bytes, err := json.Marshal(content)
+	if err != nil {
+		return errors.New("someerror") // TODO
+	}
+	d.contents = bytes
 
 	return nil
 }

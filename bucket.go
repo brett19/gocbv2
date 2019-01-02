@@ -57,6 +57,7 @@ func (b *Bucket) DefaultCollection() *Collection {
 	return b.defaultScope().DefaultCollection()
 }
 
+// Views returns a new ViewsManager for the Bucket.
 func (b *Bucket) Views() *ViewsManager {
 	return newViewsManager(b)
 }

@@ -445,7 +445,11 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 	doc.withExpiry = result.withExpiry
 	doc.expireAt = result.expireAt
 	doc.id = key
-	doc.fromSubDoc(spec.spec.ops, result)
+	err = doc.fromSubDoc(spec.spec.ops, result)
+	if err != nil {
+		errOut = err
+		return
+	}
 	docOut = doc
 
 	return
@@ -602,11 +606,11 @@ func (opts LookupInOptions) getWithFlags(path string, flags SubdocFlag) LookupIn
 	return opts
 }
 
-// PathExists is similar to Path(), but does not actually retrieve the value from the server.
+// Exists is similar to Path(), but does not actually retrieve the value from the server.
 // This may save bandwidth if you only need to check for the existence of a
 // path (without caring for its content). You can check the status of this
 // operation by using .ContentAt (and ignoring the value) or .Exists() on the LookupResult.
-func (opts LookupInOptions) PathExists(path string) LookupInOptions {
+func (opts LookupInOptions) Exists(path string) LookupInOptions {
 	op := gocbcore.SubDocOp{
 		Op:    gocbcore.SubDocOpExists,
 		Path:  path,
@@ -615,6 +619,26 @@ func (opts LookupInOptions) PathExists(path string) LookupInOptions {
 	opts.spec.ops = append(opts.spec.ops, op)
 
 	return opts
+}
+
+// Count allows you to retrieve the number of items in an array or keys within an
+// dictionary within an element of a document.
+func (opts LookupInOptions) Count(path string) LookupInOptions {
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpGetCount,
+		Path:  path,
+		Flags: gocbcore.SubdocFlagNone,
+	}
+	opts.spec.ops = append(opts.spec.ops, op)
+
+	return opts
+}
+
+// XAttr indicates an extended attribute to be retrieved from the document.  The value of the path
+// can later be retrieved from the LookupResult.
+// The path syntax follows N1QL's path syntax (e.g. `foo.bar.baz`).
+func (opts LookupInOptions) XAttr(path string) LookupInOptions {
+	return opts.getWithFlags(path, SubdocFlagXattr)
 }
 
 // LookupIn performs a set of subdocument lookup operations on the document identified by key.
@@ -707,7 +731,11 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 			if opts.WithExpiry {
 				// if expiry was requested then extract and remove it from the results
 				resSet.withExpiry = true
-				resSet.ContentAt(0, &resSet.expireAt)
+				err = resSet.ContentAt(0, &resSet.expireAt)
+				if err != nil {
+					errOut = err
+					return
+				}
 				resSet.contents = resSet.contents[1:]
 			}
 
@@ -734,6 +762,7 @@ type MutateInOptions struct {
 	ParentSpanContext opentracing.SpanContext
 	Timeout           time.Duration
 	Context           context.Context
+	ExpireAt          time.Time
 	Cas               Cas
 	PersistTo         uint
 	ReplicateTo       uint
@@ -764,10 +793,6 @@ func (opts MutateInOptions) Insert(path string, val interface{}, createParents b
 		flags |= SubdocFlagCreatePath
 	}
 
-	return opts.insertWithFlags(path, val, flags)
-}
-
-func (opts MutateInOptions) insertWithFlags(path string, val interface{}, flags SubdocFlag) MutateInOptions {
 	if path == "" {
 		op := gocbcore.SubDocOp{
 			Op:    gocbcore.SubDocOpAddDoc,
@@ -784,22 +809,162 @@ func (opts MutateInOptions) insertWithFlags(path string, val interface{}, flags 
 		Flags: gocbcore.SubdocFlag(flags),
 		Value: opts.marshalValue(val),
 	}
+
+	opts.spec.ops = append(opts.spec.ops, op)
+	return opts
+}
+
+// Upsert creates a new value at the specified path within the document if it does not exist, if it does exist then it
+// updates it.
+func (opts MutateInOptions) Upsert(path string, val interface{}, createParents bool) MutateInOptions {
+	var flags SubdocFlag
+	if createParents {
+		flags |= SubdocFlagCreatePath
+	}
+
+	if path == "" {
+		op := gocbcore.SubDocOp{
+			Op:    gocbcore.SubDocOpSetDoc,
+			Flags: gocbcore.SubdocFlag(flags),
+			Value: opts.marshalValue(val),
+		}
+		opts.spec.ops = append(opts.spec.ops, op)
+		return opts
+	}
+
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpDictSet,
+		Path:  path,
+		Flags: gocbcore.SubdocFlag(flags),
+		Value: opts.marshalValue(val),
+	}
+
 	opts.spec.ops = append(opts.spec.ops, op)
 	return opts
 }
 
 // Replace replaces the value of the field at path.
 func (opts MutateInOptions) Replace(path string, val interface{}) MutateInOptions {
-	return opts.replaceWithFlags(path, val, SubdocFlagNone)
-}
-
-func (opts MutateInOptions) replaceWithFlags(path string, val interface{}, flags SubdocFlag) MutateInOptions {
 	op := gocbcore.SubDocOp{
-		Op:    gocbcore.SubDocOpReplace,
+		Op:    gocbcore.SubDocOpDelete,
 		Path:  path,
-		Flags: gocbcore.SubdocFlag(flags),
+		Flags: gocbcore.SubdocFlagNone,
 		Value: opts.marshalValue(val),
 	}
+
+	opts.spec.ops = append(opts.spec.ops, op)
+	return opts
+}
+
+// Remove removes the field at path.
+func (opts MutateInOptions) Remove(path string) MutateInOptions {
+	if path == "" {
+		op := gocbcore.SubDocOp{
+			Op:    gocbcore.SubDocOpDeleteDoc,
+			Flags: gocbcore.SubdocFlagNone,
+		}
+
+		opts.spec.ops = append(opts.spec.ops, op)
+		return opts
+	}
+
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpDelete,
+		Path:  path,
+		Flags: gocbcore.SubdocFlagNone,
+	}
+
+	opts.spec.ops = append(opts.spec.ops, op)
+	return opts
+}
+
+// ArrayAppend adds an element to the end (i.e. right) of an array
+func (opts *MutateInOptions) ArrayAppend(path string, bytes []byte, createParents bool) *MutateInOptions {
+	var flags SubdocFlag
+	if createParents {
+		flags |= SubdocFlagCreatePath
+	}
+
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpArrayPushLast,
+		Path:  path,
+		Flags: gocbcore.SubdocFlag(flags),
+		Value: bytes,
+	}
+
+	opts.spec.ops = append(opts.spec.ops, op)
+	return opts
+}
+
+// ArrayPrepend adds an element to the beginning (i.e. left) of an array
+func (opts *MutateInOptions) ArrayPrepend(path string, bytes []byte, createParents bool) *MutateInOptions {
+	var flags SubdocFlag
+	if createParents {
+		flags |= SubdocFlagCreatePath
+	}
+
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpArrayPushFirst,
+		Path:  path,
+		Flags: gocbcore.SubdocFlag(flags),
+		Value: bytes,
+	}
+
+	opts.spec.ops = append(opts.spec.ops, op)
+	return opts
+}
+
+// ArrayInsert inserts an element at a given position within an array. The position should be
+// specified as part of the path, e.g. path.to.array[3]
+func (opts *MutateInOptions) ArrayInsert(path string, bytes []byte, createParents bool) *MutateInOptions {
+	var flags SubdocFlag
+	if createParents {
+		flags |= SubdocFlagCreatePath
+	}
+
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpArrayInsert,
+		Path:  path,
+		Flags: gocbcore.SubdocFlag(flags),
+		Value: bytes,
+	}
+
+	opts.spec.ops = append(opts.spec.ops, op)
+	return opts
+}
+
+// ArrayAddUnique adds an dictionary add unique operation to this mutation operation set.
+func (opts *MutateInOptions) ArrayAddUnique(path string, bytes []byte, createParents bool) *MutateInOptions {
+	var flags SubdocFlag
+	if createParents {
+		flags |= SubdocFlagCreatePath
+	}
+
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpArrayAddUnique,
+		Path:  path,
+		Flags: gocbcore.SubdocFlag(flags),
+		Value: bytes,
+	}
+
+	opts.spec.ops = append(opts.spec.ops, op)
+	return opts
+}
+
+// Counter adds an counter operation to this mutation operation set.
+func (opts *MutateInOptions) Counter(path string, delta int64, createParents bool) *MutateInOptions {
+	var flags SubdocFlag
+	if createParents {
+		flags |= SubdocFlagCreatePath
+	}
+
+	op := gocbcore.SubDocOp{
+		Op:    gocbcore.SubDocOpCounter,
+		Path:  path,
+		Flags: gocbcore.SubdocFlag(flags),
+		Value: opts.marshalValue(delta),
+	}
+
 	opts.spec.ops = append(opts.spec.ops, op)
 	return opts
 }
@@ -823,6 +988,13 @@ func (c *Collection) Mutate(key string, opts MutateInOptions) (mutOut *StoreResu
 		return nil, err
 	}
 
+	var expiry uint32
+	if opts.ExpireAt.IsZero() {
+		expiry = 0
+	} else {
+		expiry = uint32(opts.ExpireAt.Unix())
+	}
+
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.MutateInEx(gocbcore.MutateInOptions{
 		Key:          []byte(key),
@@ -831,6 +1003,7 @@ func (c *Collection) Mutate(key string, opts MutateInOptions) (mutOut *StoreResu
 		CollectionID: collectionID,
 		Ops:          opts.spec.ops,
 		TraceContext: span.Context(),
+		Expiry:       expiry,
 	}, func(res *gocbcore.MutateInResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
@@ -1188,7 +1361,7 @@ func (c *Collection) Counter(key string, opts *CounterOptions) (mutOut *StoreRes
 	} else if opts.Delta < 0 {
 		return c.counterDec(deadlinedCtx, span.Context(), key, uint64(-opts.Delta), realInitial, expiry)
 	} else {
-		errOut = errors.New("delta must be a non-zero value") //TODO
+		errOut = errors.New("delta must be a non-zero value") // TODO
 		return
 	}
 }
