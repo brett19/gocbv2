@@ -10,7 +10,7 @@ type LookupInResult struct {
 	cas        Cas
 	contents   []lookupInPartial
 	pathMap    map[string]int
-	expireAt   uint32
+	expireAt   int64
 	withExpiry bool
 }
 
@@ -64,5 +64,5 @@ func (lir *LookupInResult) HasExpiry() bool {
 
 // Expiry is the expiry value for the document related to the result.
 func (lir *LookupInResult) Expiry() time.Time {
-	return time.Unix(int64(lir.expireAt), 0)
+	return time.Unix(lir.expireAt, 0)
 }

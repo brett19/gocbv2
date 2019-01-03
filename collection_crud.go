@@ -12,9 +12,6 @@ import (
 	"gopkg.in/couchbase/gocbcore.v7"
 )
 
-// TODO: Need to handle timeouts here.  It might be neccessary to move
-// timeout handling down into gocbcore, but that is still uncertain.
-
 type kvProvider interface {
 	AddEx(opts gocbcore.AddOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
 	SetEx(opts gocbcore.SetOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
@@ -444,14 +441,15 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 	doc := &GetResult{}
 	doc.withExpiry = result.withExpiry
 	doc.expireAt = result.expireAt
+	doc.cas = result.cas
 	doc.id = key
 	err = doc.fromSubDoc(spec.spec.ops, result)
 	if err != nil {
 		errOut = err
 		return
 	}
-	docOut = doc
 
+	docOut = doc
 	return
 }
 
@@ -734,6 +732,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 				err = resSet.ContentAt(0, &resSet.expireAt)
 				if err != nil {
 					errOut = err
+					ctrl.Resolve()
 					return
 				}
 				resSet.contents = resSet.contents[1:]

@@ -14,7 +14,7 @@ type GetResult struct {
 	id         string
 	flags      uint32
 	cas        Cas
-	expireAt   uint32
+	expireAt   int64
 	withExpiry bool
 	contents   []byte
 }
@@ -31,7 +31,7 @@ func (d *GetResult) HasExpiry() bool {
 
 // Expiry returns the expiry value for the result.
 func (d *GetResult) Expiry() time.Time {
-	return time.Unix(int64(d.expireAt), 0)
+	return time.Unix(d.expireAt, 0)
 }
 
 // Content assigns the value of the result into the valuePtr using json unmarshalling.

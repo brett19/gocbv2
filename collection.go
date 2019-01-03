@@ -145,11 +145,11 @@ func (c *Collection) WithOperationTimeout(duration time.Duration) *Collection {
 func (c *Collection) startKvOpTrace(parentSpanCtx opentracing.SpanContext, operationName string) opentracing.Span {
 	var span opentracing.Span
 	if parentSpanCtx == nil {
-		span = opentracing.GlobalTracer().StartSpan("Read",
+		span = opentracing.GlobalTracer().StartSpan(operationName,
 			opentracing.Tag{Key: "couchbase.collection", Value: c.sb.CollectionName},
 			opentracing.Tag{Key: "couchbase.service", Value: "kv"})
 	} else {
-		span = opentracing.GlobalTracer().StartSpan("Read",
+		span = opentracing.GlobalTracer().StartSpan(operationName,
 			opentracing.Tag{Key: "couchbase.collection", Value: c.sb.CollectionName},
 			opentracing.Tag{Key: "couchbase.service", Value: "kv"}, opentracing.ChildOf(parentSpanCtx))
 	}
