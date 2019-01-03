@@ -170,13 +170,6 @@ func (c *Cluster) connSpec() gocbconnstr.ConnSpec {
 	return c.cSpec
 }
 
-// Diagnostics returns information about the internal state of the SDK.
-//
-// Experimental: This API is subject to change at any time.
-func (c *Cluster) Diagnostics(reportID string) (*DiagnosticsResult, error) {
-	return nil, errors.New("Not implemented")
-}
-
 // Users returns a new UserManager for the Cluster.
 func (c *Cluster) Users() (*UserManager, error) {
 	return nil, errors.New("Not implemented")

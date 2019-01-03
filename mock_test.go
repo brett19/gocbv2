@@ -300,3 +300,7 @@ func (mc *mockClient) getKvProvider() (kvProvider, error) {
 func (mc *mockClient) getQueryProvider() (queryProvider, error) {
 	return nil, nil
 }
+
+func (mc *mockClient) getDiagnosticsProvider() (diagnosticsProvider, error) {
+	return nil, nil
+}

@@ -17,6 +17,7 @@ type client interface {
 	fetchCollectionID(ctx context.Context, scopeName string, collectionName string) (uint32, error)
 	getKvProvider() (kvProvider, error)
 	getQueryProvider() (queryProvider, error)
+	getDiagnosticsProvider() (diagnosticsProvider, error)
 	close() error
 }
 
@@ -86,6 +87,13 @@ func (c *stdClient) getKvProvider() (kvProvider, error) {
 }
 
 func (c *stdClient) getQueryProvider() (queryProvider, error) {
+	if c.agent == nil {
+		return nil, errors.New("Cluster not yet connected")
+	}
+	return c.agent, nil
+}
+
+func (c *stdClient) getDiagnosticsProvider() (diagnosticsProvider, error) {
 	if c.agent == nil {
 		return nil, errors.New("Cluster not yet connected")
 	}
