@@ -666,6 +666,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 		return nil, err
 	}
 
+	// Prepend the expiry get if required, xattrs have to be at the front of the ops list.
 	spec := opts.spec
 	if opts.WithExpiry {
 		op := gocbcore.SubDocOp{
@@ -677,6 +678,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 		spec.ops = append([]gocbcore.SubDocOp{op}, spec.ops...)
 	}
 
+	// There is a 16 op limit to subdoc so if it's hit then do full doc.
 	if len(spec.ops) > 16 {
 		spec = lookupSpec{}
 		op := gocbcore.SubDocOp{
@@ -685,8 +687,9 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 		}
 		spec.ops = append(spec.ops, op)
 
+		// If required then expiry op must be re-prepended as the ops list has been reset.
 		if opts.WithExpiry {
-			op := gocbcore.SubDocOp{
+			op = gocbcore.SubDocOp{
 				Op:    gocbcore.SubDocOpGet,
 				Path:  "$document.exptime",
 				Flags: gocbcore.SubdocFlag(SubdocFlagXattr),
@@ -769,12 +772,12 @@ type MutateInOptions struct {
 }
 
 func (opts *MutateInOptions) marshalValue(value interface{}) []byte {
-	if value, ok := value.([]byte); ok {
-		return value
+	if val, ok := value.([]byte); ok {
+		return val
 	}
 
-	if value, ok := value.(*[]byte); ok {
-		return *value
+	if val, ok := value.(*[]byte); ok {
+		return *val
 	}
 
 	bytes, err := json.Marshal(value)
@@ -1285,278 +1288,6 @@ func (c *Collection) Touch(key string, opts *GetAndTouchOptions) (mutOut *StoreR
 		Expiry:       expiry,
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.TouchResult, err error) {
-		if err != nil {
-			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
-				c.setCollectionUnknown()
-			}
-
-			errOut = err
-			ctrl.Resolve()
-			return
-		}
-
-		mutTok := MutationToken{
-			token:      res.MutationToken,
-			bucketName: c.sb.BucketName,
-		}
-		mutOut = &StoreResult{
-			mt: mutTok,
-		}
-		mutOut.cas = Cas(res.Cas)
-
-		ctrl.Resolve()
-	}))
-	if err != nil {
-		errOut = err
-	}
-
-	return
-}
-
-// CounterOptions are the options available to the Counter operation.
-type CounterOptions struct {
-	ParentSpanContext opentracing.SpanContext
-	Timeout           time.Duration
-	Context           context.Context
-	ExpireAt          time.Time
-	Initial           int64
-	Delta             int64
-}
-
-// Counter performs an atomic addition or subtraction for an integer document.  Passing a
-// non-negative `initial` value will cause the document to be created if it did  not
-// already exist.
-func (c *Collection) Counter(key string, opts *CounterOptions) (mutOut *StoreResult, errOut error) {
-	if opts == nil {
-		opts = &CounterOptions{}
-	}
-
-	span := c.startKvOpTrace(opts.ParentSpanContext, "Counter")
-	defer span.Finish()
-
-	deadlinedCtx := opts.Context
-	if deadlinedCtx == nil {
-		deadlinedCtx = context.Background()
-	}
-
-	d := c.deadline(deadlinedCtx, time.Now(), opts.Timeout)
-	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
-	defer cancel()
-
-	realInitial := uint64(0xFFFFFFFFFFFFFFFF)
-	if opts.Initial >= 0 {
-		realInitial = uint64(opts.Initial)
-	}
-
-	var expiry uint32
-	if opts.ExpireAt.IsZero() {
-		expiry = 0
-	} else {
-		expiry = uint32(opts.ExpireAt.Unix())
-	}
-
-	if opts.Delta > 0 {
-		return c.counterInc(deadlinedCtx, span.Context(), key, uint64(opts.Delta), realInitial, expiry)
-	} else if opts.Delta < 0 {
-		return c.counterDec(deadlinedCtx, span.Context(), key, uint64(-opts.Delta), realInitial, expiry)
-	} else {
-		errOut = errors.New("delta must be a non-zero value") // TODO
-		return
-	}
-}
-
-func (c *Collection) counterInc(ctx context.Context, tracectx opentracing.SpanContext, key string,
-	delta, initial uint64, expiry uint32) (mutOut *StoreResult, errOut error) {
-
-	collectionID, agent, err := c.getKvProviderAndID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	ctrl := c.newOpManager(ctx)
-	err = ctrl.Wait(agent.IncrementEx(gocbcore.CounterOptions{
-		Key:          []byte(key),
-		CollectionID: collectionID,
-		Delta:        delta,
-		Initial:      initial,
-		Expiry:       expiry,
-		TraceContext: tracectx,
-	}, func(res *gocbcore.CounterResult, err error) {
-		if err != nil {
-			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
-				c.setCollectionUnknown()
-			}
-
-			errOut = err
-			ctrl.Resolve()
-			return
-		}
-
-		mutTok := MutationToken{
-			token:      res.MutationToken,
-			bucketName: c.sb.BucketName,
-		}
-		mutOut = &StoreResult{
-			mt: mutTok,
-		}
-		mutOut.cas = Cas(res.Cas)
-
-		ctrl.Resolve()
-	}))
-	if err != nil {
-		errOut = err
-	}
-
-	return
-}
-
-func (c *Collection) counterDec(ctx context.Context, tracectx opentracing.SpanContext, key string,
-	delta, initial uint64, expiry uint32) (mutOut *StoreResult, errOut error) {
-
-	collectionID, agent, err := c.getKvProviderAndID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	ctrl := c.newOpManager(ctx)
-	err = ctrl.Wait(agent.DecrementEx(gocbcore.CounterOptions{
-		Key:          []byte(key),
-		CollectionID: collectionID,
-		Delta:        delta,
-		Initial:      initial,
-		Expiry:       expiry,
-		TraceContext: tracectx,
-	}, func(res *gocbcore.CounterResult, err error) {
-		if err != nil {
-			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
-				c.setCollectionUnknown()
-			}
-
-			errOut = err
-			ctrl.Resolve()
-			return
-		}
-
-		mutTok := MutationToken{
-			token:      res.MutationToken,
-			bucketName: c.sb.BucketName,
-		}
-		mutOut = &StoreResult{
-			mt: mutTok,
-		}
-		mutOut.cas = Cas(res.Cas)
-
-		ctrl.Resolve()
-	}))
-	if err != nil {
-		errOut = err
-	}
-
-	return
-}
-
-// AppendOptions are the options available to the BinaryAppend operation.
-type AppendOptions struct {
-	ParentSpanContext opentracing.SpanContext
-	Timeout           time.Duration
-	Context           context.Context
-}
-
-// BinaryAppend appends a byte value to a document.
-func (c *Collection) BinaryAppend(key string, val []byte, opts *AppendOptions) (mutOut *StoreResult, errOut error) {
-	if opts == nil {
-		opts = &AppendOptions{}
-	}
-
-	span := c.startKvOpTrace(opts.ParentSpanContext, "BinaryAppend")
-	defer span.Finish()
-
-	deadlinedCtx := opts.Context
-	if deadlinedCtx == nil {
-		deadlinedCtx = context.Background()
-	}
-
-	d := c.deadline(deadlinedCtx, time.Now(), opts.Timeout)
-	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
-	defer cancel()
-
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
-	if err != nil {
-		return nil, err
-	}
-
-	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.AppendEx(gocbcore.AdjoinOptions{
-		Key:          []byte(key),
-		Value:        val,
-		CollectionID: collectionID,
-		TraceContext: span.Context(),
-	}, func(res *gocbcore.AdjoinResult, err error) {
-		if err != nil {
-			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
-				c.setCollectionUnknown()
-			}
-
-			errOut = err
-			ctrl.Resolve()
-			return
-		}
-
-		mutTok := MutationToken{
-			token:      res.MutationToken,
-			bucketName: c.sb.BucketName,
-		}
-		mutOut = &StoreResult{
-			mt: mutTok,
-		}
-		mutOut.cas = Cas(res.Cas)
-
-		ctrl.Resolve()
-	}))
-	if err != nil {
-		errOut = err
-	}
-
-	return
-}
-
-// PrependOptions are the options available to the BinaryPrepend operation.
-type PrependOptions struct {
-	ParentSpanContext opentracing.SpanContext
-	Timeout           time.Duration
-	Context           context.Context
-}
-
-// BinaryPrepend prepends a byte value to a document.
-func (c *Collection) BinaryPrepend(key string, val []byte, opts *PrependOptions) (mutOut *StoreResult, errOut error) {
-	if opts == nil {
-		opts = &PrependOptions{}
-	}
-
-	span := c.startKvOpTrace(opts.ParentSpanContext, "BinaryPrepend")
-	defer span.Finish()
-
-	deadlinedCtx := opts.Context
-	if deadlinedCtx == nil {
-		deadlinedCtx = context.Background()
-	}
-
-	d := c.deadline(deadlinedCtx, time.Now(), opts.Timeout)
-	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
-	defer cancel()
-
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
-	if err != nil {
-		return nil, err
-	}
-
-	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.PrependEx(gocbcore.AdjoinOptions{
-		Key:          []byte(key),
-		Value:        val,
-		CollectionID: collectionID,
-		TraceContext: span.Context(),
-	}, func(res *gocbcore.AdjoinResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
 				c.setCollectionUnknown()
