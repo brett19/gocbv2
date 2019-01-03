@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -95,7 +96,7 @@ type n1qlResults struct {
 	sourceAddr      string
 }
 
-// NextBytes assigns the next result from the results into the value pointer, returning whether the read was successful.
+// Next assigns the next result from the results into the value pointer, returning whether the read was successful.
 func (r *n1qlResults) Next(valuePtr interface{}) bool {
 	if r.err != nil {
 		return false
@@ -129,7 +130,7 @@ func (r *n1qlResults) NextBytes() []byte {
 	return r.rows[r.index]
 }
 
-// Close marks the result as closed, returning any errors that occurred during reading the results.
+// Close marks the results as closed, returning any errors that occurred during reading the results.
 func (r *n1qlResults) Close() error {
 	r.closed = true
 	return r.err
@@ -202,7 +203,10 @@ func createQueryOpts(statement string, opts *QueryOptions) (map[string]interface
 		execOpts["args"] = opts.positionalParams
 	} else if opts.namedParams != nil {
 		for key, value := range opts.namedParams {
-			execOpts["$"+key] = value
+			if !strings.HasPrefix(key, "$") {
+				key = "$" + key
+			}
+			execOpts[key] = value
 		}
 	}
 
@@ -224,10 +228,10 @@ func (c *Cluster) Query(statement string, opts *QueryOptions) (QueryResults, err
 
 	var span opentracing.Span
 	if opts.parentSpanContext == nil {
-		span = opentracing.GlobalTracer().StartSpan("ExecuteSearchQuery",
+		span = opentracing.GlobalTracer().StartSpan("ExecuteN1QLQuery",
 			opentracing.Tag{Key: "couchbase.service", Value: "n1ql"})
 	} else {
-		span = opentracing.GlobalTracer().StartSpan("ExecuteSearchQuery",
+		span = opentracing.GlobalTracer().StartSpan("ExecuteN1QLQuery",
 			opentracing.Tag{Key: "couchbase.service", Value: "n1ql"}, opentracing.ChildOf(opts.parentSpanContext))
 	}
 	defer span.Finish()
@@ -278,7 +282,9 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 		default:
 			retries++
 			if opts.prepared {
+				etrace := opentracing.GlobalTracer().StartSpan("execute", opentracing.ChildOf(traceCtx))
 				res, err = c.doPreparedN1qlQuery(ctx, traceCtx, queryOpts, provider)
+				etrace.Finish()
 			} else {
 				res, err = c.executeN1qlQuery(ctx, traceCtx, queryOpts, provider)
 			}
