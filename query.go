@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"time"
 
-	opentracing "github.com/opentracing/opentracing-go"
-	gocbcore "gopkg.in/couchbase/gocbcore.v7"
+	"github.com/opentracing/opentracing-go"
+	"gopkg.in/couchbase/gocbcore.v7"
 )
 
 type n1qlCache struct {
@@ -37,8 +37,8 @@ type n1qlResponseMetrics struct {
 }
 
 type n1qlResponse struct {
-	RequestId       string              `json:"requestID"`
-	ClientContextId string              `json:"clientContextID"`
+	RequestID       string              `json:"requestID"`
+	ClientContextID string              `json:"clientContextID"`
 	Results         []json.RawMessage   `json:"results,omitempty"`
 	Errors          []n1qlError         `json:"errors,omitempty"`
 	Status          string              `json:"status"`
@@ -51,6 +51,7 @@ func (e *n1qlMultiError) Error() string {
 	return (*e)[0].Error()
 }
 
+// Code returns the error code for the error
 func (e *n1qlMultiError) Code() uint32 {
 	return (*e)[0].Code
 }
@@ -74,11 +75,11 @@ type QueryResults interface {
 	NextBytes() []byte
 	Close() error
 
-	RequestId() string
-	ClientContextId() string
+	RequestID() string
+	ClientContextID() string
 	Metrics() QueryResultMetrics
 
-	// SourceAddr returns the source endpoint where the request was sent to.
+	// SourceEndpoint returns the source endpoint where the request was sent to.
 	// VOLATILE
 	SourceEndpoint() string
 }
@@ -88,12 +89,13 @@ type n1qlResults struct {
 	index           int
 	rows            []json.RawMessage
 	err             error
-	requestId       string
-	clientContextId string
+	requestID       string
+	clientContextID string
 	metrics         QueryResultMetrics
 	sourceAddr      string
 }
 
+// NextBytes assigns the next result from the results into the value pointer, returning whether the read was successful.
 func (r *n1qlResults) Next(valuePtr interface{}) bool {
 	if r.err != nil {
 		return false
@@ -112,6 +114,7 @@ func (r *n1qlResults) Next(valuePtr interface{}) bool {
 	return true
 }
 
+// NextBytes returns the next result from the results as a byte array.
 func (r *n1qlResults) NextBytes() []byte {
 	if r.err != nil {
 		return nil
@@ -126,11 +129,13 @@ func (r *n1qlResults) NextBytes() []byte {
 	return r.rows[r.index]
 }
 
+// Close marks the result as closed, returning any errors that occurred during reading the results.
 func (r *n1qlResults) Close() error {
 	r.closed = true
 	return r.err
 }
 
+// One assigns the first value from the results into the value pointer.
 func (r *n1qlResults) One(valuePtr interface{}) error {
 	if !r.Next(valuePtr) {
 		err := r.Close()
@@ -150,26 +155,30 @@ func (r *n1qlResults) One(valuePtr interface{}) error {
 	return nil
 }
 
+// SourceEndpoint returns the endpoint used for execution of this query.
 func (r *n1qlResults) SourceEndpoint() string {
 	return r.sourceAddr
 }
 
-func (r *n1qlResults) RequestId() string {
+// RequestID returns the request ID used for this query.
+func (r *n1qlResults) RequestID() string {
 	if !r.closed {
 		panic("Result must be closed before accessing meta-data")
 	}
 
-	return r.requestId
+	return r.requestID
 }
 
-func (r *n1qlResults) ClientContextId() string {
+// ClientContextID returns the context ID used for this query.
+func (r *n1qlResults) ClientContextID() string {
 	if !r.closed {
 		panic("Result must be closed before accessing meta-data")
 	}
 
-	return r.clientContextId
+	return r.clientContextID
 }
 
+// Metrics returns metrics about execution of this result.
 func (r *n1qlResults) Metrics() QueryResultMetrics {
 	if !r.closed {
 		panic("Result must be closed before accessing meta-data")
@@ -182,15 +191,16 @@ type queryProvider interface {
 	DoHttpRequest(req *gocbcore.HttpRequest) (*gocbcore.HttpResponse, error)
 }
 
-func createQueryOpts(statement string, params *QueryParameters, opts *QueryOptions) (map[string]interface{}, error) {
+func createQueryOpts(statement string, opts *QueryOptions) (map[string]interface{}, error) {
 	execOpts := make(map[string]interface{})
 	execOpts["statement"] = statement
 	for k, v := range opts.options {
 		execOpts[k] = v
 	}
-	if params.positionalParams != nil {
+
+	if opts.positionalParams != nil {
 		execOpts["args"] = opts.positionalParams
-	} else if params.namedParams != nil {
+	} else if opts.namedParams != nil {
 		for key, value := range opts.namedParams {
 			execOpts["$"+key] = value
 		}
@@ -199,12 +209,13 @@ func createQueryOpts(statement string, params *QueryParameters, opts *QueryOptio
 	return execOpts, nil
 }
 
-func (c *Cluster) Query(statement string, params *QueryParameters, opts *QueryOptions) (QueryResults, error) {
+// Query executes the N1QL query statement on the server n1qlEp.
+// This function assumes that `opts` already contains all the required
+// settings. This function will inject any additional connection or request-level
+// settings into the `opts` map (currently this is only the timeout).
+func (c *Cluster) Query(statement string, opts *QueryOptions) (QueryResults, error) {
 	if opts == nil {
 		opts = &QueryOptions{}
-	}
-	if params == nil {
-		params = &QueryParameters{}
 	}
 	ctx := opts.ctx
 	if ctx == nil {
@@ -226,13 +237,13 @@ func (c *Cluster) Query(statement string, params *QueryParameters, opts *QueryOp
 		return nil, err
 	}
 
-	return c.query(ctx, span.Context(), statement, params, opts, provider)
+	return c.query(ctx, span.Context(), statement, opts, provider)
 }
 
-func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, statement string, params *QueryParameters,
-	opts *QueryOptions, provider queryProvider) (QueryResults, error) {
+func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, statement string, opts *QueryOptions,
+	provider queryProvider) (QueryResults, error) {
 
-	queryOpts, err := createQueryOpts(statement, params, opts)
+	queryOpts, err := createQueryOpts(statement, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +253,6 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 	var optTimeout time.Duration
 	tmostr, castok := queryOpts["timeout"].(string)
 	if castok {
-		var err error
 		optTimeout, err = time.ParseDuration(tmostr)
 		if err != nil {
 			return nil, err
@@ -264,13 +274,13 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 	for {
 		select {
 		case <-ctx.Done():
-			err = ctx.Err()
+			return nil, ctx.Err()
 		default:
 			retries++
-			if opts.adHoc {
-				res, err = c.executeN1qlQuery(ctx, traceCtx, queryOpts, provider)
-			} else {
+			if opts.prepared {
 				res, err = c.doPreparedN1qlQuery(ctx, traceCtx, queryOpts, provider)
+			} else {
+				res, err = c.executeN1qlQuery(ctx, traceCtx, queryOpts, provider)
 			}
 			if err == nil {
 				return res, err
@@ -283,8 +293,6 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 			time.Sleep(c.sb.N1qlRetryBehavior.NextInterval(retries))
 		}
 	}
-
-	return res, err
 }
 
 func (c *Cluster) doPreparedN1qlQuery(ctx context.Context, traceCtx opentracing.SpanContext, queryOpts map[string]interface{},
@@ -316,7 +324,7 @@ func (c *Cluster) doPreparedN1qlQuery(ctx context.Context, traceCtx opentracing.
 		etrace.Finish()
 
 		// If we get error 4050, 4070 or 5000, we should attempt
-		//   to reprepare the statement immediately before failing.
+		//   to re-prepare the statement immediately before failing.
 		if !isRetryableError(err) {
 			return nil, err
 		}
@@ -427,10 +435,10 @@ func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.Spa
 	}
 
 	// TODO(brett19): place the server_duration in the right place...
-	//srvDuration, _ := time.ParseDuration(n1qlResp.Metrics.ExecutionTime)
-	//strace.SetTag("server_duration", srvDuration)
+	// srvDuration, _ := time.ParseDuration(n1qlResp.Metrics.ExecutionTime)
+	// strace.SetTag("server_duration", srvDuration)
 
-	strace.SetTag("couchbase.operation_id", n1qlResp.RequestId)
+	strace.SetTag("couchbase.operation_id", n1qlResp.RequestID)
 	strace.Finish()
 
 	if len(n1qlResp.Errors) > 0 {
@@ -464,8 +472,8 @@ func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.Spa
 
 	return &n1qlResults{
 		sourceAddr:      epInfo.Host,
-		requestId:       n1qlResp.RequestId,
-		clientContextId: n1qlResp.ClientContextId,
+		requestID:       n1qlResp.RequestID,
+		clientContextID: n1qlResp.ClientContextID,
 		index:           -1,
 		rows:            n1qlResp.Results,
 		metrics: QueryResultMetrics{

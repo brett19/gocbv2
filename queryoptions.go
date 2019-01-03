@@ -16,7 +16,7 @@ const (
 	NotBounded = ConsistencyMode(1)
 	// RequestPlus indicates that request-level data consistency is required.
 	RequestPlus = ConsistencyMode(2)
-	// StatementPlus inidcates that statement-level data consistency is required.
+	// StatementPlus indicates that statement-level data consistency is required.
 	StatementPlus = ConsistencyMode(3)
 )
 
@@ -25,7 +25,7 @@ type QueryOptions struct {
 	options           map[string]interface{}
 	positionalParams  []interface{}
 	namedParams       map[string]interface{}
-	adHoc             bool
+	prepared          bool
 	ctx               context.Context
 	parentSpanContext opentracing.SpanContext
 }
@@ -57,9 +57,9 @@ func (nq *QueryOptions) ConsistentWith(state *MutationState) *QueryOptions {
 	return nq
 }
 
-// AdHoc specifies that this query is adhoc and should not be prepared.
-func (nq *QueryOptions) AdHoc(adhoc bool) *QueryOptions {
-	nq.adHoc = adhoc
+// Prepared specifies that this query should be prepared.
+func (nq *QueryOptions) Prepared(prepared bool) *QueryOptions {
+	nq.prepared = prepared
 	return nq
 }
 
@@ -116,8 +116,21 @@ func (nq *QueryOptions) WithContext(ctx context.Context) *QueryOptions {
 	return nq
 }
 
+// WithParentSpanContext set the opentracing.SpanContext to use for this query.
 func (nq *QueryOptions) WithParentSpanContext(ctx opentracing.SpanContext) *QueryOptions {
 	nq.parentSpanContext = ctx
+	return nq
+}
+
+// PositionalParameters adds a set of positional parameters to be used in this query.
+func (nq *QueryOptions) PositionalParameters(params []interface{}) *QueryOptions {
+	nq.positionalParams = params
+	return nq
+}
+
+// NamedParameters adds a set of positional parameters to be used in this query.
+func (nq *QueryOptions) NamedParameters(params map[string]interface{}) *QueryOptions {
+	nq.namedParams = params
 	return nq
 }
 
@@ -125,7 +138,6 @@ func (nq *QueryOptions) WithParentSpanContext(ctx opentracing.SpanContext) *Quer
 func NewQueryOptions() *QueryOptions {
 	nq := &QueryOptions{
 		options:          make(map[string]interface{}),
-		adHoc:            true,
 		positionalParams: nil,
 		namedParams:      nil,
 	}
