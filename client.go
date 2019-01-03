@@ -2,9 +2,10 @@ package gocb
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"gopkg.in/couchbase/gocbcore.v7"
 )
@@ -70,7 +71,7 @@ func (c *stdClient) connect() error {
 
 	agent, err := gocbcore.CreateAgent(config)
 	if err != nil {
-		return err
+		return kvError{err: errors.Wrap(err, "could not connect to cluster")}
 	}
 
 	c.agent = agent

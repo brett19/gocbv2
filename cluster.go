@@ -177,18 +177,18 @@ func (c *Cluster) Diagnostics(reportID string) (*DiagnosticsResult, error) {
 	return nil, errors.New("Not implemented")
 }
 
-// Users returns a new UsersManager for the Cluster.
-func (c *Cluster) Users() (*UsersManager, error) {
+// Users returns a new UserManager for the Cluster.
+func (c *Cluster) Users() (*UserManager, error) {
 	return nil, errors.New("Not implemented")
 }
 
-// Buckets returns a new BucketsManager for the Cluster.
-func (c *Cluster) Buckets() (*BucketsManager, error) {
+// Buckets returns a new BuckesManager for the Cluster.
+func (c *Cluster) Buckets() (*BucketManager, error) {
 	return nil, errors.New("Not implemented")
 }
 
-// QueryIndexes returns a new QueryIndexesManager for the Cluster.
-func (c *Cluster) QueryIndexes() (*QueryIndexesManager, error) {
+// QueryIndexes returns a new QueryIndexManager for the Cluster.
+func (c *Cluster) QueryIndexes() (*QueryIndexManager, error) {
 	return nil, errors.New("Not implemented")
 }
 
