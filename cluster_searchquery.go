@@ -159,10 +159,10 @@ func (c *Cluster) SearchQuery(q SearchQuery, opts *SearchQueryOptions) (SearchRe
 	var span opentracing.Span
 	if opts.parentSpanContext == nil {
 		span = opentracing.GlobalTracer().StartSpan("ExecuteSearchQuery",
-			opentracing.Tag{Key: "couchbase.service", Value: "cbas"})
+			opentracing.Tag{Key: "couchbase.service", Value: "fts"})
 	} else {
 		span = opentracing.GlobalTracer().StartSpan("ExecuteSearchQuery",
-			opentracing.Tag{Key: "couchbase.service", Value: "cbas"}, opentracing.ChildOf(opts.parentSpanContext))
+			opentracing.Tag{Key: "couchbase.service", Value: "fts"}, opentracing.ChildOf(opts.parentSpanContext))
 	}
 	defer span.Finish()
 
