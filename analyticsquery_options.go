@@ -72,6 +72,18 @@ func (aq *AnalyticsQueryOptions) NamedParameters(params map[string]interface{}) 
 	return aq
 }
 
+// WithContext sets the context.Context to used for this query.
+func (aq *AnalyticsQueryOptions) WithContext(ctx context.Context) *AnalyticsQueryOptions {
+	aq.ctx = ctx
+	return aq
+}
+
+// WithParentSpanContext set the opentracing.SpanContext to use for this query.
+func (aq *AnalyticsQueryOptions) WithParentSpanContext(ctx opentracing.SpanContext) *AnalyticsQueryOptions {
+	aq.parentSpanContext = ctx
+	return aq
+}
+
 // Deferred sets whether or not the query should be run as a deferred query.
 //
 // Experimental: This API is subject to change at any time.

@@ -79,10 +79,14 @@ func NewCluster(connStr string, opts ClusterOptions) (*Cluster, error) {
 		auth:        opts.Authenticator,
 		connections: make(map[string]client),
 		ssb: servicesStateBlock{
-			n1qlTimeout: 75 * time.Second,
+			n1qlTimeout:      75 * time.Second,
+			analyticsTimeout: 75 * time.Second,
+			searchTimeout:    75 * time.Second,
 		},
 		sb: stateBlock{
-			N1qlRetryBehavior: StandardDelayRetryBehavior(10, 2, 500*time.Millisecond, ExponentialDelayFunction),
+			N1qlRetryBehavior:      StandardDelayRetryBehavior(10, 2, 500*time.Millisecond, ExponentialDelayFunction),
+			AnalyticsRetryBehavior: StandardDelayRetryBehavior(10, 2, 500*time.Millisecond, ExponentialDelayFunction),
+			SearchRetryBehavior:    StandardDelayRetryBehavior(10, 2, 500*time.Millisecond, ExponentialDelayFunction),
 		},
 	}
 
@@ -225,4 +229,12 @@ func (c *Cluster) getQueryProvider() (queryProvider, error) {
 
 func (c *Cluster) n1qlTimeout() time.Duration {
 	return c.ssb.n1qlTimeout
+}
+
+func (c *Cluster) analyticsTimeout() time.Duration {
+	return c.ssb.analyticsTimeout
+}
+
+func (c *Cluster) searchTimeout() time.Duration {
+	return c.ssb.searchTimeout
 }

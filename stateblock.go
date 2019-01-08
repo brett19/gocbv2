@@ -25,7 +25,9 @@ type collectionStateBlock struct {
 }
 
 type servicesStateBlock struct {
-	n1qlTimeout time.Duration
+	n1qlTimeout      time.Duration
+	analyticsTimeout time.Duration
+	searchTimeout    time.Duration
 }
 
 type stateBlock struct {
@@ -41,7 +43,9 @@ type stateBlock struct {
 	PersistTo   uint
 	ReplicateTo uint
 
-	N1qlRetryBehavior RetryBehavior
+	N1qlRetryBehavior      RetryBehavior
+	AnalyticsRetryBehavior RetryBehavior
+	SearchRetryBehavior    RetryBehavior
 }
 
 func (sb *stateBlock) getClient() client {

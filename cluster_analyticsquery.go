@@ -424,7 +424,7 @@ func (c *Cluster) analyticsQuery(ctx context.Context, traceCtx opentracing.SpanC
 	}
 
 	// Work out which timeout to use, the cluster level default or query specific one
-	timeout := c.n1qlTimeout()
+	timeout := c.analyticsTimeout()
 	var optTimeout time.Duration
 	tmostr, castok := queryOpts["timeout"].(string)
 	if castok {
@@ -459,11 +459,11 @@ func (c *Cluster) analyticsQuery(ctx context.Context, traceCtx opentracing.SpanC
 				return res, err
 			}
 
-			if !isRetryableError(err) || c.sb.N1qlRetryBehavior == nil || !c.sb.N1qlRetryBehavior.CanRetry(retries) {
+			if !isRetryableError(err) || c.sb.AnalyticsRetryBehavior == nil || !c.sb.AnalyticsRetryBehavior.CanRetry(retries) {
 				return res, err
 			}
 
-			time.Sleep(c.sb.N1qlRetryBehavior.NextInterval(retries))
+			time.Sleep(c.sb.AnalyticsRetryBehavior.NextInterval(retries))
 		}
 	}
 }
