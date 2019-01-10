@@ -39,9 +39,11 @@ type stateBlock struct {
 	ScopeName      string
 	CollectionName string
 
-	KvTimeout   time.Duration
-	PersistTo   uint
-	ReplicateTo uint
+	KvTimeout       time.Duration
+	DuraTimeout     time.Duration
+	DuraPollTimeout time.Duration
+	PersistTo       uint
+	ReplicateTo     uint
 
 	N1qlRetryBehavior      RetryBehavior
 	AnalyticsRetryBehavior RetryBehavior

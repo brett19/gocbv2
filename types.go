@@ -5,3 +5,4 @@ import (
 )
 
 type Cas gocbcore.Cas
+type pendingOp gocbcore.PendingOp

@@ -286,6 +286,18 @@ func (mko *mockKvOperator) ObserveEx(opts gocbcore.ObserveOptions, cb gocbcore.O
 	return &mockPendingOp{cancelSuccess: mko.opCancellationSuccess}, nil
 }
 
+func (mko *mockKvOperator) ObserveVbEx(opts gocbcore.ObserveVbOptions, cb gocbcore.ObserveVbExCallback) (gocbcore.PendingOp, error) {
+	time.AfterFunc(mko.opWait, func() {
+		if mko.err == nil {
+			cb(&gocbcore.ObserveVbResult{}, nil)
+		} else {
+			cb(nil, mko.err)
+		}
+	})
+
+	return &mockPendingOp{cancelSuccess: mko.opCancellationSuccess}, nil
+}
+
 func (mko *mockKvOperator) GetReplicaEx(opts gocbcore.GetReplicaOptions, cb gocbcore.GetReplicaExCallback) (gocbcore.PendingOp, error) {
 	time.AfterFunc(mko.opWait, func() {
 		if mko.err == nil {
@@ -301,6 +313,10 @@ func (mko *mockKvOperator) GetReplicaEx(opts gocbcore.GetReplicaOptions, cb gocb
 	})
 
 	return &mockPendingOp{cancelSuccess: mko.opCancellationSuccess}, nil
+}
+
+func (mko *mockKvOperator) NumReplicas() int {
+	return 0
 }
 
 func (mc *mockClient) Hash() string {

@@ -93,6 +93,8 @@ func newCollection(scope *Scope, collectionName string, opts *CollectionOptions)
 	}
 	collection.sb.CollectionName = collectionName
 	collection.sb.KvTimeout = 10 * time.Second
+	collection.sb.DuraTimeout = 40000 * time.Millisecond
+	collection.sb.DuraPollTimeout = 100 * time.Millisecond
 	collection.sb.recacheClient()
 
 	span := collection.startKvOpTrace(opts.ParentSpanContext, "GetCollectionID")

@@ -19,6 +19,7 @@ type kvProvider interface {
 	GetEx(opts gocbcore.GetOptions, cb gocbcore.GetExCallback) (gocbcore.PendingOp, error)
 	GetReplicaEx(opts gocbcore.GetReplicaOptions, cb gocbcore.GetReplicaExCallback) (gocbcore.PendingOp, error)
 	ObserveEx(opts gocbcore.ObserveOptions, cb gocbcore.ObserveExCallback) (gocbcore.PendingOp, error)
+	ObserveVbEx(opts gocbcore.ObserveVbOptions, cb gocbcore.ObserveVbExCallback) (gocbcore.PendingOp, error)
 	DeleteEx(opts gocbcore.DeleteOptions, cb gocbcore.DeleteExCallback) (gocbcore.PendingOp, error)
 	LookupInEx(opts gocbcore.LookupInOptions, cb gocbcore.LookupInExCallback) (gocbcore.PendingOp, error)
 	MutateInEx(opts gocbcore.MutateInOptions, cb gocbcore.MutateInExCallback) (gocbcore.PendingOp, error)
@@ -30,6 +31,7 @@ type kvProvider interface {
 	DecrementEx(opts gocbcore.CounterOptions, cb gocbcore.CounterExCallback) (gocbcore.PendingOp, error)
 	AppendEx(opts gocbcore.AdjoinOptions, cb gocbcore.AdjoinExCallback) (gocbcore.PendingOp, error)
 	PrependEx(opts gocbcore.AdjoinOptions, cb gocbcore.AdjoinExCallback) (gocbcore.PendingOp, error)
+	NumReplicas() int // UNSURE THIS SSHOULDNT BE ON ANOTHER INTERFACE
 }
 
 // shortestTime calculates the shortest of two times, this is used for context deadlines.
@@ -101,7 +103,7 @@ type UpsertOptions struct {
 	Encode            Encode
 	PersistTo         uint
 	ReplicateTo       uint
-	WithDurability    DurabilityLevel
+	DurabilityLevel   DurabilityLevel
 }
 
 // InsertOptions are options that can be applied to an Insert operation.
@@ -113,7 +115,7 @@ type InsertOptions struct {
 	Encode            Encode
 	PersistTo         uint
 	ReplicateTo       uint
-	WithDurability    DurabilityLevel
+	DurabilityLevel   DurabilityLevel
 }
 
 // Insert creates a new document in the Collection.
@@ -125,6 +127,18 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 	span := c.startKvOpTrace(opts.ParentSpanContext, "Insert")
 	defer span.Finish()
 
+	res, err := c.insert(span.Context(), key, val, *opts)
+	if err != nil {
+		return nil, err
+	}
+
+	if opts.PersistTo == 0 && opts.ReplicateTo == 0 {
+		return res, nil
+	}
+	return res, c.durability(opts.Context, span.Context(), key, res.Cas(), res.MutationToken(), opts.ReplicateTo, opts.PersistTo, false)
+
+}
+func (c *Collection) insert(traceCtx opentracing.SpanContext, key string, val interface{}, opts InsertOptions) (mutOut *MutationResult, errOut error) {
 	deadlinedCtx := opts.Context
 	if deadlinedCtx == nil {
 		deadlinedCtx = context.Background()
@@ -146,7 +160,7 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 		return
 	}
 
-	encodeSpan := opentracing.GlobalTracer().StartSpan("Encoding", opentracing.ChildOf(span.Context()))
+	encodeSpan := opentracing.GlobalTracer().StartSpan("Encoding", opentracing.ChildOf(traceCtx))
 	bytes, flags, err := encodeFn(val)
 	if err != nil {
 		errOut = err
@@ -161,7 +175,7 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 		Value:        bytes,
 		Flags:        flags,
 		Expiry:       opts.Expiration,
-		TraceContext: span.Context(),
+		TraceContext: traceCtx,
 	}, func(res *gocbcore.StoreResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
@@ -199,10 +213,18 @@ func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (m
 	span := c.startKvOpTrace(opts.ParentSpanContext, "Upsert")
 	defer span.Finish()
 
-	if opts.Context == nil {
-		opts.Context = context.Background()
+	res, err := c.upsert(span.Context(), key, val, *opts)
+	if err != nil {
+		return nil, err
 	}
 
+	if opts.PersistTo == 0 && opts.ReplicateTo == 0 {
+		return res, nil
+	}
+	return res, c.durability(opts.Context, span.Context(), key, res.Cas(), res.MutationToken(), opts.ReplicateTo, opts.PersistTo, false)
+}
+
+func (c *Collection) upsert(traceCtx opentracing.SpanContext, key string, val interface{}, opts UpsertOptions) (mutOut *MutationResult, errOut error) {
 	deadlinedCtx := opts.Context
 	if deadlinedCtx == nil {
 		deadlinedCtx = context.Background()
@@ -239,7 +261,7 @@ func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (m
 		Value:        bytes,
 		Flags:        flags,
 		Expiry:       opts.Expiration,
-		TraceContext: span.Context(),
+		TraceContext: traceCtx,
 	}, func(res *gocbcore.StoreResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
@@ -278,7 +300,7 @@ type ReplaceOptions struct {
 	Encode            Encode
 	PersistTo         uint
 	ReplicateTo       uint
-	WithDurability    DurabilityLevel
+	DurabilityLevel   DurabilityLevel
 }
 
 // Replace updates a document in the collection.
@@ -290,6 +312,18 @@ func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) 
 	span := c.startKvOpTrace(opts.ParentSpanContext, "Replace")
 	defer span.Finish()
 
+	res, err := c.replace(span.Context(), key, val, *opts)
+	if err != nil {
+		return nil, err
+	}
+
+	if opts.PersistTo == 0 && opts.ReplicateTo == 0 {
+		return res, nil
+	}
+	return res, c.durability(opts.Context, span.Context(), key, res.Cas(), res.MutationToken(), opts.ReplicateTo, opts.PersistTo, false)
+}
+
+func (c *Collection) replace(traceCtx opentracing.SpanContext, key string, val interface{}, opts ReplaceOptions) (mutOut *MutationResult, errOut error) {
 	deadlinedCtx := opts.Context
 	if deadlinedCtx == nil {
 		deadlinedCtx = context.Background()
@@ -325,7 +359,7 @@ func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) 
 		Flags:        flags,
 		Expiry:       opts.Expiration,
 		Cas:          gocbcore.Cas(opts.Cas),
-		TraceContext: span.Context(),
+		TraceContext: traceCtx,
 	}, func(res *gocbcore.StoreResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
@@ -438,6 +472,9 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 
 // get performs a full document fetch against the collection
 func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts *GetOptions) (docOut *GetResult, errOut error) {
+	span := c.startKvOpTrace(traceCtx, "get")
+	defer span.Finish()
+
 	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
@@ -617,7 +654,7 @@ type RemoveOptions struct {
 	Cas               Cas
 	PersistTo         uint
 	ReplicateTo       uint
-	WithDurability    DurabilityLevel
+	DurabilityLevel   DurabilityLevel
 }
 
 // Remove removes a document from the collection.
@@ -629,6 +666,18 @@ func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationRe
 	span := c.startKvOpTrace(opts.ParentSpanContext, "Remove")
 	defer span.Finish()
 
+	res, err := c.remove(span.Context(), key, *opts)
+	if err != nil {
+		return nil, err
+	}
+
+	if opts.PersistTo == 0 && opts.ReplicateTo == 0 {
+		return res, nil
+	}
+	return res, c.durability(opts.Context, span.Context(), key, res.Cas(), res.MutationToken(), opts.ReplicateTo, opts.PersistTo, false)
+}
+
+func (c *Collection) remove(traceCtx opentracing.SpanContext, key string, opts RemoveOptions) (mutOut *MutationResult, errOut error) {
 	deadlinedCtx := opts.Context
 	if deadlinedCtx == nil {
 		deadlinedCtx = context.Background()
@@ -648,7 +697,7 @@ func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationRe
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		Cas:          gocbcore.Cas(opts.Cas),
-		TraceContext: opts.ParentSpanContext,
+		TraceContext: traceCtx,
 	}, func(res *gocbcore.DeleteResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
@@ -775,6 +824,9 @@ func (c *Collection) LookupIn(key string, opts *LookupInOptions) (docOut *Lookup
 }
 
 func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts LookupInOptions) (docOut *LookupInResult, errOut error) {
+	span := c.startKvOpTrace(traceCtx, "lookupIn")
+	defer span.Finish()
+
 	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
@@ -797,7 +849,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 		spec = lookupSpec{}
 		op := gocbcore.SubDocOp{
 			Op:    gocbcore.SubDocOpGetDoc,
-			Flags: gocbcore.SubdocFlag(spec.flags),
+			Flags: gocbcore.SubdocFlag(SubdocDocFlagNone),
 		}
 		spec.ops = append(spec.ops, op)
 
@@ -869,7 +921,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 
 type mutateSpec struct {
 	ops   []gocbcore.SubDocOp
-	flags gocbcore.SubdocDocFlag
+	flags SubdocDocFlag
 	// errs  []error
 }
 
@@ -882,6 +934,8 @@ type MutateInOptions struct {
 	Cas               Cas
 	PersistTo         uint
 	ReplicateTo       uint
+	DurabilityLevel   DurabilityLevel
+	CreateDocument    bool
 	spec              mutateSpec
 }
 
@@ -1086,7 +1140,26 @@ func (opts *MutateInOptions) Counter(path string, delta int64, createParents boo
 }
 
 // Mutate performs a set of subdocument mutations on the document specified by key.
-func (c *Collection) Mutate(key string, opts MutateInOptions) (mutOut *MutationResult, errOut error) { // TODO: should return MutateInResult
+func (c *Collection) Mutate(key string, val interface{}, opts *MutateInOptions) (mutOut *MutationResult, errOut error) {
+	if opts == nil {
+		opts = &MutateInOptions{}
+	}
+
+	span := c.startKvOpTrace(opts.ParentSpanContext, "MutateIn")
+	defer span.Finish()
+
+	res, err := c.mutate(span.Context(), key, *opts)
+	if err != nil {
+		return nil, err
+	}
+
+	if opts.PersistTo == 0 && opts.ReplicateTo == 0 {
+		return res, nil
+	}
+	return res, c.durability(opts.Context, span.Context(), key, res.Cas(), res.MutationToken(), opts.ReplicateTo, opts.PersistTo, false)
+}
+
+func (c *Collection) mutate(traceCtx opentracing.SpanContext, key string, opts MutateInOptions) (mutOut *MutationResult, errOut error) { // TODO: should return MutateInResult
 	deadlinedCtx := opts.Context
 	if deadlinedCtx == nil {
 		deadlinedCtx = context.Background()
@@ -1096,22 +1169,24 @@ func (c *Collection) Mutate(key string, opts MutateInOptions) (mutOut *MutationR
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	span := c.startKvOpTrace(opts.ParentSpanContext, "MutateIn")
-	defer span.Finish()
-
 	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
 
+	flags := opts.spec.flags
+	if opts.CreateDocument {
+		flags |= SubdocDocFlagMkDoc
+	}
+
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.MutateInEx(gocbcore.MutateInOptions{
 		Key:          []byte(key),
-		Flags:        opts.spec.flags,
+		Flags:        gocbcore.SubdocDocFlag(flags),
 		Cas:          gocbcore.Cas(opts.Cas),
 		CollectionID: c.collectionID(),
 		Ops:          opts.spec.ops,
-		TraceContext: span.Context(),
+		TraceContext: traceCtx,
 		Expiry:       opts.Expiration,
 	}, func(res *gocbcore.MutateInResult, err error) {
 		if err != nil {

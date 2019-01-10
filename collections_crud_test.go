@@ -46,13 +46,17 @@ func TestGetNoOptions(t *testing.T) {
 		},
 	}
 
-	col := b.DefaultCollection()
+	col, err := b.DefaultCollection(nil)
+	if err != nil {
+		t.Fatalf("Opening collection encountered error: %v", err)
+	}
+
 	res, err := col.Get("key", nil)
 	if err != nil {
 		t.Fatalf("Get encountered error: %v", err)
 	}
 
-	if res.HasExpiry() {
+	if res.HasExpiration() {
 		t.Fatalf("Expected document to not have an expiry")
 	}
 
@@ -83,8 +87,8 @@ func TestGetWithExpiry(t *testing.T) {
 		t.Fatalf("Failed to unmarshal dataset: %v", err)
 	}
 
-	expiry := time.Now()
-	expiryBytes, err := json.Marshal(expiry.Unix())
+	expiry := 10
+	expiryBytes, err := json.Marshal(expiry)
 	if err != nil {
 		t.Fatalf("Could not marshal expiry: %v", err)
 	}
@@ -124,18 +128,21 @@ func TestGetWithExpiry(t *testing.T) {
 		},
 	}
 
-	col := b.DefaultCollection()
+	col, err := b.DefaultCollection(nil)
+	if err != nil {
+		t.Fatalf("Opening collection encountered error: %v", err)
+	}
 	res, err := col.Get("key", &GetOptions{WithExpiry: true})
 	if err != nil {
 		t.Fatalf("Get encountered error: %v", err)
 	}
 
-	if !res.HasExpiry() {
+	if !res.HasExpiration() {
 		t.Fatalf("Expected document to have an expiry")
 	}
 
-	if res.Expiry().Format("2006-01-02 15:04:05") != expiry.Format("2006-01-02 15:04:05") {
-		t.Fatalf("Expected expiry value to be %s but was %s", expiry, res.Expiry())
+	if res.Expiration() != uint32(expiry) {
+		t.Fatalf("Expected expiry value to be %d but was %d", expiry, res.Expiration())
 	}
 
 	if res.Cas() != Cas(1) {
@@ -185,7 +192,7 @@ func TestGetProject(t *testing.T) {
 		value:    resultOps,
 		opWait:   1 * time.Millisecond,
 	}
-	col := testGetCollection(provider)
+	col := testGetCollection(t, provider)
 
 	opts := GetOptions{}.Project("city", "country", "name", "geo.accuracy")
 	res, err := col.Get("key", &opts)
@@ -193,7 +200,7 @@ func TestGetProject(t *testing.T) {
 		t.Fatalf("Get encountered error: %v", err)
 	}
 
-	if res.HasExpiry() {
+	if !res.HasExpiration() {
 		t.Fatalf("Expected document to not have an expiry")
 	}
 
@@ -212,7 +219,7 @@ func TestGetProject(t *testing.T) {
 	}
 }
 
-func testGetCollection(provider *mockKvOperator) *Collection {
+func testGetCollection(t *testing.T, provider *mockKvOperator) *Collection {
 	clients := make(map[string]client)
 	clients["mock-false"] = &mockClient{
 		bucketName:        "mock",
@@ -232,6 +239,9 @@ func testGetCollection(provider *mockKvOperator) *Collection {
 			},
 		},
 	}
-	col := b.DefaultCollection()
+	col, err := b.DefaultCollection(nil)
+	if err != nil {
+		t.Fatalf("Opening collection encountered error: %v", err)
+	}
 	return col
 }
