@@ -17,6 +17,7 @@ type kvProvider interface {
 	SetEx(opts gocbcore.SetOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
 	ReplaceEx(opts gocbcore.ReplaceOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
 	GetEx(opts gocbcore.GetOptions, cb gocbcore.GetExCallback) (gocbcore.PendingOp, error)
+	GetReplicaEx(opts gocbcore.GetReplicaOptions, cb gocbcore.GetReplicaExCallback) (gocbcore.PendingOp, error)
 	ObserveEx(opts gocbcore.ObserveOptions, cb gocbcore.ObserveExCallback) (gocbcore.PendingOp, error)
 	DeleteEx(opts gocbcore.DeleteOptions, cb gocbcore.DeleteExCallback) (gocbcore.PendingOp, error)
 	LookupInEx(opts gocbcore.LookupInOptions, cb gocbcore.LookupInExCallback) (gocbcore.PendingOp, error)
@@ -96,7 +97,7 @@ type UpsertOptions struct {
 	ParentSpanContext opentracing.SpanContext
 	Timeout           time.Duration
 	Context           context.Context
-	ExpireAt          time.Time
+	Expiration        uint32
 	Encode            Encode
 	PersistTo         uint
 	ReplicateTo       uint
@@ -108,7 +109,7 @@ type InsertOptions struct {
 	ParentSpanContext opentracing.SpanContext
 	Timeout           time.Duration
 	Context           context.Context
-	ExpireAt          time.Time
+	Expiration        uint32
 	Encode            Encode
 	PersistTo         uint
 	ReplicateTo       uint
@@ -139,13 +140,6 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 		encodeFn = DefaultEncode
 	}
 
-	var expiry uint32
-	if opts.ExpireAt.IsZero() {
-		expiry = 0
-	} else {
-		expiry = uint32(opts.ExpireAt.Unix())
-	}
-
 	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
 	if err != nil {
 		errOut = err
@@ -166,7 +160,7 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 		CollectionID: collectionID,
 		Value:        bytes,
 		Flags:        flags,
-		Expiry:       expiry,
+		Expiry:       opts.Expiration,
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.StoreResult, err error) {
 		if err != nil {
@@ -222,13 +216,6 @@ func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (m
 		opts.Encode = DefaultEncode
 	}
 
-	var expiry uint32
-	if opts.ExpireAt.IsZero() {
-		expiry = 0
-	} else {
-		expiry = uint32(opts.ExpireAt.Unix())
-	}
-
 	log.Printf("Fetching Agent")
 
 	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
@@ -251,7 +238,7 @@ func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (m
 		CollectionID: collectionID,
 		Value:        bytes,
 		Flags:        flags,
-		Expiry:       expiry,
+		Expiry:       opts.Expiration,
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.StoreResult, err error) {
 		if err != nil {
@@ -286,7 +273,7 @@ type ReplaceOptions struct {
 	ParentSpanContext opentracing.SpanContext
 	Timeout           time.Duration
 	Context           context.Context
-	ExpireAt          time.Time
+	Expiration        uint32
 	Cas               Cas
 	Encode            Encode
 	PersistTo         uint
@@ -316,11 +303,6 @@ func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) 
 		opts.Encode = DefaultEncode
 	}
 
-	expiry := uint32(0)
-	if !opts.ExpireAt.IsZero() {
-		expiry = uint32(opts.ExpireAt.Unix())
-	}
-
 	log.Printf("Fetching Agent")
 
 	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
@@ -341,7 +323,7 @@ func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) 
 		CollectionID: collectionID,
 		Value:        bytes,
 		Flags:        flags,
-		Expiry:       expiry,
+		Expiry:       opts.Expiration,
 		Cas:          gocbcore.Cas(opts.Cas),
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.StoreResult, err error) {
@@ -440,8 +422,8 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 	}
 
 	doc := &GetResult{}
-	doc.withExpiry = result.withExpiry
-	doc.expireAt = result.expireAt
+	doc.withExpiration = result.withExpiration
+	doc.expiration = result.expiration
 	doc.cas = result.cas
 	doc.id = key
 	err = doc.fromSubDoc(spec.spec.ops, result)
@@ -547,6 +529,72 @@ func (c *Collection) Exists(key string, opts *ExistsOptions) (docOut *ExistsResu
 				id:       key,
 				cas:      Cas(res.Cas),
 				keyState: res.KeyState,
+			}
+
+			docOut = doc
+		}
+
+		ctrl.Resolve()
+	}))
+	if err != nil {
+		errOut = err
+	}
+
+	return
+}
+
+// GetFromReplicaOptions are the options available to the GetFromReplica command.
+type GetFromReplicaOptions struct {
+	ParentSpanContext opentracing.SpanContext
+	Timeout           time.Duration
+	Context           context.Context
+}
+
+// GetFromReplica returns the value of a particular document from a replica server..
+func (c *Collection) GetFromReplica(key string, replicaIdx int, opts *GetFromReplicaOptions) (docOut *GetResult, errOut error) { // TODO: ReplicaMode?
+	if opts == nil {
+		opts = &GetFromReplicaOptions{}
+	}
+
+	span := c.startKvOpTrace(opts.ParentSpanContext, "GetFromReplica")
+	defer span.Finish()
+
+	deadlinedCtx := opts.Context
+	if deadlinedCtx == nil {
+		deadlinedCtx = context.Background()
+	}
+
+	d := c.deadline(deadlinedCtx, time.Now(), opts.Timeout)
+	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
+	defer cancel()
+
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	ctrl := c.newOpManager(deadlinedCtx)
+	err = ctrl.Wait(agent.GetReplicaEx(gocbcore.GetReplicaOptions{
+		Key:          []byte(key),
+		CollectionID: collectionID,
+		TraceContext: span.Context(),
+		ReplicaIdx:   0,
+	}, func(res *gocbcore.GetReplicaResult, err error) {
+		if err != nil {
+			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
+				c.setCollectionUnknown()
+			}
+
+			errOut = err
+			ctrl.Resolve()
+			return
+		}
+		if res != nil {
+			doc := &GetResult{
+				id:       key,
+				contents: res.Value,
+				flags:    res.Flags,
+				cas:      Cas(res.Cas),
 			}
 
 			docOut = doc
@@ -797,8 +845,8 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 
 			if opts.WithExpiry {
 				// if expiry was requested then extract and remove it from the results
-				resSet.withExpiry = true
-				err = resSet.ContentAt(0, &resSet.expireAt)
+				resSet.withExpiration = true
+				err = resSet.ContentAt(0, &resSet.expiration)
 				if err != nil {
 					errOut = err
 					ctrl.Resolve()
@@ -830,7 +878,7 @@ type MutateInOptions struct {
 	ParentSpanContext opentracing.SpanContext
 	Timeout           time.Duration
 	Context           context.Context
-	ExpireAt          time.Time
+	Expiration        uint32
 	Cas               Cas
 	PersistTo         uint
 	ReplicateTo       uint
@@ -1056,13 +1104,6 @@ func (c *Collection) Mutate(key string, opts MutateInOptions) (mutOut *MutationR
 		return nil, err
 	}
 
-	var expiry uint32
-	if opts.ExpireAt.IsZero() {
-		expiry = 0
-	} else {
-		expiry = uint32(opts.ExpireAt.Unix())
-	}
-
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.MutateInEx(gocbcore.MutateInOptions{
 		Key:          []byte(key),
@@ -1071,7 +1112,7 @@ func (c *Collection) Mutate(key string, opts MutateInOptions) (mutOut *MutationR
 		CollectionID: collectionID,
 		Ops:          opts.spec.ops,
 		TraceContext: span.Context(),
-		Expiry:       expiry,
+		Expiry:       opts.Expiration,
 	}, func(res *gocbcore.MutateInResult, err error) {
 		if err != nil {
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
@@ -1106,11 +1147,10 @@ type GetAndTouchOptions struct {
 	ParentSpanContext opentracing.SpanContext
 	Timeout           time.Duration
 	Context           context.Context
-	ExpireAt          time.Time
 }
 
 // GetAndTouch retrieves a document and simultaneously updates its expiry time.
-func (c *Collection) GetAndTouch(key string, opts *GetAndTouchOptions) (docOut *GetResult, errOut error) {
+func (c *Collection) GetAndTouch(key string, expiration uint32, opts *GetAndTouchOptions) (docOut *GetResult, errOut error) {
 	if opts == nil {
 		opts = &GetAndTouchOptions{}
 	}
@@ -1132,18 +1172,11 @@ func (c *Collection) GetAndTouch(key string, opts *GetAndTouchOptions) (docOut *
 		return nil, err
 	}
 
-	var expiry uint32
-	if opts.ExpireAt.IsZero() {
-		expiry = 0
-	} else {
-		expiry = uint32(opts.ExpireAt.Unix())
-	}
-
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.GetAndTouchEx(gocbcore.GetAndTouchOptions{
 		Key:          []byte(key),
 		CollectionID: collectionID,
-		Expiry:       expiry,
+		Expiry:       expiration,
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.GetAndTouchResult, err error) {
 		if err != nil {
@@ -1180,11 +1213,10 @@ type GetAndLockOptions struct {
 	ParentSpanContext opentracing.SpanContext
 	Timeout           time.Duration
 	Context           context.Context
-	LockTime          uint32
 }
 
 // GetAndLock locks a document for a period of time, providing exclusive RW access to it.
-func (c *Collection) GetAndLock(key string, opts *GetAndLockOptions) (docOut *GetResult, errOut error) {
+func (c *Collection) GetAndLock(key string, expiration uint32, opts *GetAndLockOptions) (docOut *GetResult, errOut error) {
 	if opts == nil {
 		opts = &GetAndLockOptions{}
 	}
@@ -1210,7 +1242,7 @@ func (c *Collection) GetAndLock(key string, opts *GetAndLockOptions) (docOut *Ge
 	err = ctrl.Wait(agent.GetAndLockEx(gocbcore.GetAndLockOptions{
 		Key:          []byte(key),
 		CollectionID: collectionID,
-		LockTime:     opts.LockTime,
+		LockTime:     expiration,
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.GetAndLockResult, err error) {
 		if err != nil {
@@ -1313,12 +1345,11 @@ type TouchOptions struct {
 	ParentSpanContext opentracing.SpanContext
 	Timeout           time.Duration
 	Context           context.Context
-	ExpireAt          time.Time
 }
 
 // Touch touches a document, specifying a new expiry time for it.
 // The Cas value must be 0.
-func (c *Collection) Touch(key string, opts *GetAndTouchOptions) (mutOut *MutationResult, errOut error) {
+func (c *Collection) Touch(key string, expiration uint32, opts *GetAndTouchOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &GetAndTouchOptions{}
 	}
@@ -1340,18 +1371,11 @@ func (c *Collection) Touch(key string, opts *GetAndTouchOptions) (mutOut *Mutati
 		return nil, err
 	}
 
-	var expiry uint32
-	if opts.ExpireAt.IsZero() {
-		expiry = 0
-	} else {
-		expiry = uint32(opts.ExpireAt.Unix())
-	}
-
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.TouchEx(gocbcore.TouchOptions{
 		Key:          []byte(key),
 		CollectionID: collectionID,
-		Expiry:       expiry,
+		Expiry:       expiration,
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.TouchResult, err error) {
 		if err != nil {
@@ -1382,50 +1406,7 @@ func (c *Collection) Touch(key string, opts *GetAndTouchOptions) (mutOut *Mutati
 	return
 }
 
-// type GetReplicaOptions struct {
-// 	replicaIdx int
-// }
-
-// func (opts GetReplicaOptions) ReplicaIndex(replicaIdx int) GetReplicaOptions {
-// 	opts.replicaIdx = replicaIdx
-// 	return opts
-// }
-
-// func (c *Collection) GetReplica(key string, opts *GetReplicaOptions) (docOut *GetResult, errOut error) {
-// 	if opts == nil {
-// 		opts = &GetReplicaOptions{}
-// 	}
-
-// 	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	waitCh := make(chan struct{})
-
-// 	agent.GetReplicaEx(gocbcore.GetReplicaOptions{
-// 		Key:          []byte(key),
-// 		CollectionID: collectionID,
-// 		ReplicaIdx:   opts.replicaIdx,
-// 	}, func(res *gocbcore.GetReplicaResult, err error) {
-// 		if err != nil {
-// 			errOut = err
-// 			waitCh <- struct{}{}
-// 			return
-// 		}
-
-// 		docOut = &GetResult{
-// 			id: key,
-// 			contents: []getPartial{
-// 				getPartial{bytes: res.Value, path: ""},
-// 			},
-// 			flags: res.Flags,
-// 			cas:   Cas(res.Cas),
-// 		}
-// 		waitCh <- struct{}{}
-// 	})
-
-// 	<-waitCh
-
-// 	return
-// }
+// Binary creates and returns a CollectionBinary object.
+func (c *Collection) Binary() *CollectionBinary {
+	return &CollectionBinary{c}
+}

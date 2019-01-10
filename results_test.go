@@ -27,7 +27,7 @@ func TestGetResultHasExpiry(t *testing.T) {
 		t.Fatalf("HasExpiry should have returned false but returned true")
 	}
 
-	res.withExpiry = true
+	res.withExpiration = true
 
 	if !res.HasExpiry() {
 		t.Fatalf("HasExpiry should have returned true but returned false")
@@ -37,7 +37,7 @@ func TestGetResultHasExpiry(t *testing.T) {
 func TestGetResultExpiry(t *testing.T) {
 	now := time.Now()
 	res := GetResult{
-		expireAt: now.Unix(),
+		expiration: now.Unix(),
 	}
 
 	// In Go the time value 2006-01-02 15:04:05 has to be used in Format.

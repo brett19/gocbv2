@@ -3,7 +3,6 @@ package gocb
 import (
 	"encoding/json"
 	"strings"
-	"time"
 
 	"github.com/pkg/errors"
 	"gopkg.in/couchbase/gocbcore.v7"
@@ -11,12 +10,12 @@ import (
 
 // GetResult is the return type of Get operations.
 type GetResult struct {
-	id         string
-	flags      uint32
-	cas        Cas
-	expireAt   int64
-	withExpiry bool
-	contents   []byte
+	id             string
+	flags          uint32
+	cas            Cas
+	expiration     uint32
+	withExpiration bool
+	contents       []byte
 }
 
 // Cas returns the cas of the result.
@@ -24,14 +23,14 @@ func (d *GetResult) Cas() Cas {
 	return d.cas
 }
 
-// HasExpiry verifies whether or not the result has an expiry value.
-func (d *GetResult) HasExpiry() bool {
-	return d.withExpiry
+// HasExpiration verifies whether or not the result has an expiration value.
+func (d *GetResult) HasExpiration() bool {
+	return d.withExpiration
 }
 
-// Expiry returns the expiry value for the result.
-func (d *GetResult) Expiry() time.Time {
-	return time.Unix(d.expireAt, 0)
+// Expiration returns the expiration value for the result.
+func (d *GetResult) Expiration() uint32 {
+	return d.expiration
 }
 
 // Content assigns the value of the result into the valuePtr using json unmarshalling.
@@ -78,6 +77,68 @@ func (d *GetResult) set(path []string, i int, content map[string]interface{}, va
 		content[path[i]] = make(map[string]interface{})
 	}
 	d.set(path, i+1, content[path[i]].(map[string]interface{}), value)
+}
+
+// LookupInResult is the return type for LookupIn.
+type LookupInResult struct {
+	cas            Cas
+	contents       []lookupInPartial
+	pathMap        map[string]int
+	expiration     uint32
+	withExpiration bool
+}
+
+type lookupInPartial struct {
+	data json.RawMessage
+	err  error
+}
+
+func (pr *lookupInPartial) as(valuePtr interface{}) error {
+	if pr.err != nil {
+		return pr.err
+	}
+
+	if valuePtr == nil {
+		return nil
+	}
+
+	if valuePtr, ok := valuePtr.(*[]byte); ok {
+		*valuePtr = pr.data
+		return nil
+	}
+
+	return json.Unmarshal(pr.data, valuePtr)
+}
+
+func (pr *lookupInPartial) exists() bool {
+	err := pr.as(nil)
+	return err == nil
+}
+
+// Cas returns the Cas of the Document
+func (lir *LookupInResult) Cas() Cas {
+	return lir.cas
+}
+
+// ContentAt retrieves the value of the operation by its index. The index is the position of
+// the operation as it was added to the builder.
+func (lir *LookupInResult) ContentAt(idx int, valuePtr interface{}) error {
+	return lir.contents[idx].as(valuePtr)
+}
+
+// Exists verifies that the item at idx exists.
+func (lir *LookupInResult) Exists(idx int) bool {
+	return lir.contents[idx].exists()
+}
+
+// HasExpiration verifies whether or not the result has an expiration value set on it.
+func (lir *LookupInResult) HasExpiration() bool {
+	return lir.withExpiration
+}
+
+// Expiration is the expiration value for the document related to the result.
+func (lir *LookupInResult) Expiration() uint32 {
+	return lir.expiration
 }
 
 // ExistsResult is the return type of Exist operations.

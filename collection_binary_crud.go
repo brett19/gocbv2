@@ -13,15 +13,15 @@ type CollectionBinary struct {
 	*Collection
 }
 
-// AppendOptions are the options available to the BinaryAppend operation.
+// AppendOptions are the options available to the Append operation.
 type AppendOptions struct {
 	ParentSpanContext opentracing.SpanContext
 	Timeout           time.Duration
 	Context           context.Context
 }
 
-// BinaryAppend appends a byte value to a document.
-func (c *CollectionBinary) BinaryAppend(key string, val []byte, opts *AppendOptions) (mutOut *MutationResult, errOut error) {
+// Append appends a byte value to a document.
+func (c *CollectionBinary) Append(key string, val []byte, opts *AppendOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &AppendOptions{}
 	}
@@ -78,15 +78,15 @@ func (c *CollectionBinary) BinaryAppend(key string, val []byte, opts *AppendOpti
 	return
 }
 
-// PrependOptions are the options available to the BinaryPrepend operation.
+// PrependOptions are the options available to the Prepend operation.
 type PrependOptions struct {
 	ParentSpanContext opentracing.SpanContext
 	Timeout           time.Duration
 	Context           context.Context
 }
 
-// BinaryPrepend prepends a byte value to a document.
-func (c *CollectionBinary) BinaryPrepend(key string, val []byte, opts *PrependOptions) (mutOut *MutationResult, errOut error) {
+// Prepend prepends a byte value to a document.
+func (c *CollectionBinary) Prepend(key string, val []byte, opts *PrependOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &PrependOptions{}
 	}
