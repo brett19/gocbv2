@@ -17,6 +17,7 @@ type kvProvider interface {
 	SetEx(opts gocbcore.SetOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
 	ReplaceEx(opts gocbcore.ReplaceOptions, cb gocbcore.StoreExCallback) (gocbcore.PendingOp, error)
 	GetEx(opts gocbcore.GetOptions, cb gocbcore.GetExCallback) (gocbcore.PendingOp, error)
+	ObserveEx(opts gocbcore.ObserveOptions, cb gocbcore.ObserveExCallback) (gocbcore.PendingOp, error)
 	DeleteEx(opts gocbcore.DeleteOptions, cb gocbcore.DeleteExCallback) (gocbcore.PendingOp, error)
 	LookupInEx(opts gocbcore.LookupInOptions, cb gocbcore.LookupInExCallback) (gocbcore.PendingOp, error)
 	MutateInEx(opts gocbcore.MutateInOptions, cb gocbcore.MutateInExCallback) (gocbcore.PendingOp, error)
@@ -481,6 +482,70 @@ func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, 
 				contents: res.Value,
 				flags:    res.Flags,
 				cas:      Cas(res.Cas),
+			}
+
+			docOut = doc
+		}
+
+		ctrl.Resolve()
+	}))
+	if err != nil {
+		errOut = err
+	}
+
+	return
+}
+
+// ExistsOptions are the options available to the Exists command.
+type ExistsOptions struct {
+	ParentSpanContext opentracing.SpanContext
+	Timeout           time.Duration
+	Context           context.Context
+}
+
+func (c *Collection) Exists(key string, opts *ExistsOptions) (docOut *ExistsResult, errOut error) {
+	if opts == nil {
+		opts = &ExistsOptions{}
+	}
+
+	span := c.startKvOpTrace(opts.ParentSpanContext, "Exists")
+	defer span.Finish()
+
+	deadlinedCtx := opts.Context
+	if deadlinedCtx == nil {
+		deadlinedCtx = context.Background()
+	}
+
+	d := c.deadline(deadlinedCtx, time.Now(), opts.Timeout)
+	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
+	defer cancel()
+
+	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	ctrl := c.newOpManager(deadlinedCtx)
+	err = ctrl.Wait(agent.ObserveEx(gocbcore.ObserveOptions{
+		Key:          []byte(key),
+		CollectionID: collectionID,
+		TraceContext: span.Context(),
+		ReplicaIdx:   0,
+	}, func(res *gocbcore.ObserveResult, err error) {
+		if err != nil {
+			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
+				c.setCollectionUnknown()
+			}
+
+			errOut = err
+			ctrl.Resolve()
+			return
+		}
+		if res != nil {
+			doc := &ExistsResult{
+				id:       key,
+				cas:      Cas(res.Cas),
+				keyState: res.KeyState,
 			}
 
 			docOut = doc
