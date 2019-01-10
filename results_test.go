@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"gopkg.in/couchbase/gocbcore.v7"
 )
@@ -23,26 +22,24 @@ func TestGetResultCas(t *testing.T) {
 func TestGetResultHasExpiry(t *testing.T) {
 	res := GetResult{}
 
-	if res.HasExpiry() {
+	if res.HasExpiration() {
 		t.Fatalf("HasExpiry should have returned false but returned true")
 	}
 
 	res.withExpiration = true
 
-	if !res.HasExpiry() {
+	if !res.HasExpiration() {
 		t.Fatalf("HasExpiry should have returned true but returned false")
 	}
 }
 
 func TestGetResultExpiry(t *testing.T) {
-	now := time.Now()
 	res := GetResult{
-		expiration: now.Unix(),
+		expiration: 10,
 	}
 
-	// In Go the time value 2006-01-02 15:04:05 has to be used in Format.
-	if res.Expiry().Format("2006-01-02 15:04:05") != now.Format("2006-01-02 15:04:05") {
-		t.Fatalf("Expiry value should have been %s but was %s", now.String(), res.Expiry().String())
+	if res.Expiration() != 10 {
+		t.Fatalf("Expiry value should have been 10 but was %d", res.Expiration())
 	}
 }
 
