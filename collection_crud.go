@@ -503,6 +503,7 @@ type ExistsOptions struct {
 	Context           context.Context
 }
 
+// Exists checks if a document exists for the given key.
 func (c *Collection) Exists(key string, opts *ExistsOptions) (docOut *ExistsResult, errOut error) {
 	if opts == nil {
 		opts = &ExistsOptions{}

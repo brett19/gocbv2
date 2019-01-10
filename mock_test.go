@@ -271,6 +271,21 @@ func (mko *mockKvOperator) MutateInEx(opts gocbcore.MutateInOptions, cb gocbcore
 	return &mockPendingOp{cancelSuccess: mko.opCancellationSuccess}, nil
 }
 
+func (mko *mockKvOperator) ObserveEx(opts gocbcore.ObserveOptions, cb gocbcore.ObserveExCallback) (gocbcore.PendingOp, error) {
+	time.AfterFunc(mko.opWait, func() {
+		if mko.err == nil {
+			cb(&gocbcore.ObserveResult{
+				Cas:      mko.cas,
+				KeyState: mko.value.(gocbcore.KeyState),
+			}, nil)
+		} else {
+			cb(nil, mko.err)
+		}
+	})
+
+	return &mockPendingOp{cancelSuccess: mko.opCancellationSuccess}, nil
+}
+
 func (mc *mockClient) Hash() string {
 	return fmt.Sprintf("%s-%t",
 		mc.bucketName,
