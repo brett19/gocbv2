@@ -79,3 +79,58 @@ func (d *GetResult) set(path []string, i int, content map[string]interface{}, va
 	}
 	d.set(path, i+1, content[path[i]].(map[string]interface{}), value)
 }
+
+// ExistsResult is the return type of Exist operations.
+type ExistsResult struct {
+	id       string
+	cas      Cas
+	keyState gocbcore.KeyState
+}
+
+// Cas returns the cas of the result.
+func (d *ExistsResult) Cas() Cas {
+	return d.cas
+}
+
+// Exists returns whether or not the document exists.
+func (d *ExistsResult) Exists() bool {
+	return d.keyState == gocbcore.KeyStateNotFound
+}
+
+// MutationResult is the return type of any store related operations. It contains Cas and mutation tokens.
+type MutationResult struct {
+	mt  MutationToken
+	cas Cas
+}
+
+// MutationToken returns the mutation token belonging to an operation.
+func (mr MutationResult) MutationToken() MutationToken {
+	return mr.mt
+}
+
+// Cas returns the Cas value for a document following an operation.
+func (mr MutationResult) Cas() Cas {
+	return mr.cas
+}
+
+// CounterResult is the return type of counter operations.
+type CounterResult struct {
+	mt      MutationToken
+	cas     Cas
+	content uint64
+}
+
+// MutationToken returns the mutation token belonging to an operation.
+func (mr CounterResult) MutationToken() MutationToken {
+	return mr.mt
+}
+
+// Cas returns the Cas value for a document following an operation.
+func (mr CounterResult) Cas() Cas {
+	return mr.cas
+}
+
+// Content returns the new value for the counter document.
+func (mr CounterResult) Content() uint64 {
+	return mr.content
+}

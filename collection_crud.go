@@ -116,7 +116,7 @@ type InsertOptions struct {
 }
 
 // Insert creates a new document in the Collection.
-func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (mutOut *StoreResult, errOut error) {
+func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &InsertOptions{}
 	}
@@ -182,7 +182,7 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &StoreResult{
+		mutOut = &MutationResult{
 			mt: mutTok,
 		}
 		mutOut.cas = Cas(res.Cas)
@@ -197,7 +197,7 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 }
 
 // Upsert creates a new document in the Collection if it does not exist, if it does exist then it updates it.
-func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (mutOut *StoreResult, errOut error) {
+func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &UpsertOptions{}
 	}
@@ -267,7 +267,7 @@ func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (m
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &StoreResult{
+		mutOut = &MutationResult{
 			mt: mutTok,
 		}
 		mutOut.cas = Cas(res.Cas)
@@ -295,7 +295,7 @@ type ReplaceOptions struct {
 }
 
 // Replace updates a document in the collection.
-func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) (mutOut *StoreResult, errOut error) {
+func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &ReplaceOptions{}
 	}
@@ -358,7 +358,7 @@ func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) 
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &StoreResult{
+		mutOut = &MutationResult{
 			mt: mutTok,
 		}
 		mutOut.cas = Cas(res.Cas)
@@ -572,7 +572,7 @@ type RemoveOptions struct {
 }
 
 // Remove removes a document from the collection.
-func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *StoreResult, errOut error) {
+func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &RemoveOptions{}
 	}
@@ -614,7 +614,7 @@ func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *StoreResul
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &StoreResult{
+		mutOut = &MutationResult{
 			mt: mutTok,
 		}
 		mutOut.cas = Cas(res.Cas)
@@ -1037,7 +1037,7 @@ func (opts *MutateInOptions) Counter(path string, delta int64, createParents boo
 }
 
 // Mutate performs a set of subdocument mutations on the document specified by key.
-func (c *Collection) Mutate(key string, opts MutateInOptions) (mutOut *StoreResult, errOut error) {
+func (c *Collection) Mutate(key string, opts MutateInOptions) (mutOut *MutationResult, errOut error) { // TODO: should return MutateInResult
 	deadlinedCtx := opts.Context
 	if deadlinedCtx == nil {
 		deadlinedCtx = context.Background()
@@ -1085,7 +1085,7 @@ func (c *Collection) Mutate(key string, opts MutateInOptions) (mutOut *StoreResu
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutRes := &StoreResult{
+		mutRes := &MutationResult{
 			mt: mutTok,
 		}
 		mutRes.cas = Cas(res.Cas)
@@ -1250,7 +1250,7 @@ type UnlockOptions struct {
 }
 
 // Unlock unlocks a document which was locked with GetAndLock.
-func (c *Collection) Unlock(key string, opts *UnlockOptions) (mutOut *StoreResult, errOut error) {
+func (c *Collection) Unlock(key string, opts *UnlockOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &UnlockOptions{}
 	}
@@ -1293,7 +1293,7 @@ func (c *Collection) Unlock(key string, opts *UnlockOptions) (mutOut *StoreResul
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &StoreResult{
+		mutOut = &MutationResult{
 			mt: mutTok,
 		}
 		mutOut.cas = Cas(res.Cas)
@@ -1317,7 +1317,7 @@ type TouchOptions struct {
 
 // Touch touches a document, specifying a new expiry time for it.
 // The Cas value must be 0.
-func (c *Collection) Touch(key string, opts *GetAndTouchOptions) (mutOut *StoreResult, errOut error) {
+func (c *Collection) Touch(key string, opts *GetAndTouchOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &GetAndTouchOptions{}
 	}
@@ -1367,7 +1367,7 @@ func (c *Collection) Touch(key string, opts *GetAndTouchOptions) (mutOut *StoreR
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &StoreResult{
+		mutOut = &MutationResult{
 			mt: mutTok,
 		}
 		mutOut.cas = Cas(res.Cas)

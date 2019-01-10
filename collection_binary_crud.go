@@ -21,7 +21,7 @@ type AppendOptions struct {
 }
 
 // BinaryAppend appends a byte value to a document.
-func (c *CollectionBinary) BinaryAppend(key string, val []byte, opts *AppendOptions) (mutOut *StoreResult, errOut error) {
+func (c *CollectionBinary) BinaryAppend(key string, val []byte, opts *AppendOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &AppendOptions{}
 	}
@@ -64,7 +64,7 @@ func (c *CollectionBinary) BinaryAppend(key string, val []byte, opts *AppendOpti
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &StoreResult{
+		mutOut = &MutationResult{
 			mt: mutTok,
 		}
 		mutOut.cas = Cas(res.Cas)
@@ -86,7 +86,7 @@ type PrependOptions struct {
 }
 
 // BinaryPrepend prepends a byte value to a document.
-func (c *CollectionBinary) BinaryPrepend(key string, val []byte, opts *PrependOptions) (mutOut *StoreResult, errOut error) {
+func (c *CollectionBinary) BinaryPrepend(key string, val []byte, opts *PrependOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &PrependOptions{}
 	}
@@ -129,7 +129,7 @@ func (c *CollectionBinary) BinaryPrepend(key string, val []byte, opts *PrependOp
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &StoreResult{
+		mutOut = &MutationResult{
 			mt: mutTok,
 		}
 		mutOut.cas = Cas(res.Cas)
@@ -156,7 +156,7 @@ type CounterOptions struct {
 // Increment performs an atomic addition for an integer document. Passing a
 // non-negative `initial` value will cause the document to be created if it did not
 // already exist.
-func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (mutOut *StoreResult, errOut error) {
+func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (mutOut *CounterResult, errOut error) {
 	if opts == nil {
 		opts = &CounterOptions{}
 	}
@@ -213,10 +213,11 @@ func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (mutOut *
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &StoreResult{
-			mt: mutTok,
+		mutOut = &CounterResult{
+			mt:      mutTok,
+			cas:     Cas(res.Cas),
+			content: res.Value,
 		}
-		mutOut.cas = Cas(res.Cas)
 
 		ctrl.Resolve()
 	}))
@@ -230,7 +231,7 @@ func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (mutOut *
 // Decrement performs an atomic subtraction for an integer document. Passing a
 // non-negative `initial` value will cause the document to be created if it did not
 // already exist.
-func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (mutOut *StoreResult, errOut error) {
+func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (mutOut *CounterResult, errOut error) {
 	if opts == nil {
 		opts = &CounterOptions{}
 	}
@@ -287,10 +288,11 @@ func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (mutOut *
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &StoreResult{
-			mt: mutTok,
+		mutOut = &CounterResult{
+			mt:      mutTok,
+			cas:     Cas(res.Cas),
+			content: res.Value,
 		}
-		mutOut.cas = Cas(res.Cas)
 
 		ctrl.Resolve()
 	}))
