@@ -3,9 +3,11 @@ package gocb
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 )
 
 // ConsistencyMode indicates the level of data consistency desired for a query.
@@ -20,126 +22,98 @@ const (
 	StatementPlus = ConsistencyMode(3)
 )
 
-// QueryOptions represents a pending N1QL query.
+// QueryOptions represents the options available when executing a N1QL query.
 type QueryOptions struct {
-	options           map[string]interface{}
-	positionalParams  []interface{}
-	namedParams       map[string]interface{}
-	prepared          bool
-	ctx               context.Context
-	parentSpanContext opentracing.SpanContext
+	Consistency    ConsistencyMode
+	ConsistentWith *MutationState
+	Prepared       bool
+	Profile        QueryProfileType
+	// ScanCap specifies the maximum buffered channel size between the indexer
+	// client and the query service for index scans. This parameter controls
+	// when to use scan backfill. Use a negative number to disable.
+	ScanCap int
+	// PipelineBatch controls the number of items execution operators can
+	// batch for fetch from the KV node.
+	PipelineBatch int
+	// PipelineCap controls the maximum number of items each execution operator
+	// can buffer between various operators.
+	PipelineCap int
+	// ReadOnly controls whether a query can change a resulting recordset.  If
+	// readonly is true, then only SELECT statements are permitted.
+	ReadOnly             bool
+	Timeout              time.Duration
+	PositionalParameters []interface{}
+	NamedParameters      map[string]interface{}
+	Context              context.Context
+	ParentSpanContext    opentracing.SpanContext
+	// Custom allows specifying custom query options.
+	Custom map[string]interface{}
 }
 
-// Consistency specifies the level of consistency required for this query.
-func (nq *QueryOptions) Consistency(stale ConsistencyMode) *QueryOptions {
-	if _, ok := nq.options["scan_vectors"]; ok {
-		panic("Consistent and ConsistentWith must be used exclusively")
+func (opts *QueryOptions) toMap(statement string) (map[string]interface{}, error) {
+	execOpts := make(map[string]interface{})
+	execOpts["statement"] = statement
+	if opts.Timeout != 0 {
+		execOpts["timeout"] = opts.Timeout.String()
 	}
-	if stale == NotBounded {
-		nq.options["scan_consistency"] = "not_bounded"
-	} else if stale == RequestPlus {
-		nq.options["scan_consistency"] = "request_plus"
-	} else if stale == StatementPlus {
-		nq.options["scan_consistency"] = "statement_plus"
-	} else {
-		panic("Unexpected consistency option")
+
+	if opts.Consistency != 0 && opts.ConsistentWith != nil {
+		return nil, errors.New("Consistent and ConsistentWith must be used exclusively")
 	}
-	return nq
-}
 
-// ConsistentWith specifies a mutation state to be consistent with for this query.
-func (nq *QueryOptions) ConsistentWith(state *MutationState) *QueryOptions {
-	if _, ok := nq.options["scan_consistency"]; ok {
-		panic("Consistent and ConsistentWith must be used exclusively")
+	if opts.Consistency != 0 {
+		if opts.Consistency == NotBounded {
+			execOpts["scan_consistency"] = "not_bounded"
+		} else if opts.Consistency == RequestPlus {
+			execOpts["scan_consistency"] = "request_plus"
+		} else if opts.Consistency == StatementPlus {
+			execOpts["scan_consistency"] = "statement_plus"
+		} else {
+			return nil, errors.New("Unexpected consistency option")
+		}
 	}
-	nq.options["scan_consistency"] = "at_plus"
-	nq.options["scan_vectors"] = state
-	return nq
-}
 
-// Prepared specifies that this query should be prepared.
-func (nq *QueryOptions) Prepared(prepared bool) *QueryOptions {
-	nq.prepared = prepared
-	return nq
-}
-
-// Profile specifies a profiling mode to use for this N1QL query.
-func (nq *QueryOptions) Profile(profileMode QueryProfileType) *QueryOptions {
-	nq.options["profile"] = profileMode
-	return nq
-}
-
-// ScanCap specifies the maximum buffered channel size between the indexer
-// client and the query service for index scans. This parameter controls
-// when to use scan backfill. Use 0 or a negative number to disable.
-func (nq *QueryOptions) ScanCap(scanCap int) *QueryOptions {
-	nq.options["scan_cap"] = strconv.Itoa(scanCap)
-	return nq
-}
-
-// PipelineBatch controls the number of items execution operators can
-// batch for fetch from the KV node.
-func (nq *QueryOptions) PipelineBatch(pipelineBatch int) *QueryOptions {
-	nq.options["pipeline_batch"] = strconv.Itoa(pipelineBatch)
-	return nq
-}
-
-// PipelineCap controls the maximum number of items each execution operator
-// can buffer between various operators.
-func (nq *QueryOptions) PipelineCap(pipelineCap int) *QueryOptions {
-	nq.options["pipeline_cap"] = strconv.Itoa(pipelineCap)
-	return nq
-}
-
-// ReadOnly controls whether a query can change a resulting recordset.  If
-// readonly is true, then only SELECT statements are permitted.
-func (nq *QueryOptions) ReadOnly(readOnly bool) *QueryOptions {
-	nq.options["readonly"] = readOnly
-	return nq
-}
-
-// Custom allows specifying custom query options.
-func (nq *QueryOptions) Custom(name string, value interface{}) *QueryOptions {
-	nq.options[name] = value
-	return nq
-}
-
-// Timeout indicates the maximum time to wait for this query to complete.
-func (nq *QueryOptions) Timeout(timeout time.Duration) *QueryOptions {
-	nq.options["timeout"] = timeout.String()
-	return nq
-}
-
-// WithContext sets the context.Context to used for this query.
-func (nq *QueryOptions) WithContext(ctx context.Context) *QueryOptions {
-	nq.ctx = ctx
-	return nq
-}
-
-// WithParentSpanContext set the opentracing.SpanContext to use for this query.
-func (nq *QueryOptions) WithParentSpanContext(ctx opentracing.SpanContext) *QueryOptions {
-	nq.parentSpanContext = ctx
-	return nq
-}
-
-// PositionalParameters adds a set of positional parameters to be used in this query.
-func (nq *QueryOptions) PositionalParameters(params []interface{}) *QueryOptions {
-	nq.positionalParams = params
-	return nq
-}
-
-// NamedParameters adds a set of positional parameters to be used in this query.
-func (nq *QueryOptions) NamedParameters(params map[string]interface{}) *QueryOptions {
-	nq.namedParams = params
-	return nq
-}
-
-// NewQueryOptions creates a new QueryOptions object.
-func NewQueryOptions() *QueryOptions {
-	nq := &QueryOptions{
-		options:          make(map[string]interface{}),
-		positionalParams: nil,
-		namedParams:      nil,
+	if opts.ConsistentWith != nil {
+		execOpts["scan_consistency"] = "at_plus"
+		execOpts["scan_vectors"] = opts.ConsistentWith
 	}
-	return nq
+
+	if opts.Profile != "" {
+		execOpts["profile"] = opts.Profile
+	}
+
+	if opts.Custom != nil {
+		for k, v := range opts.Custom {
+			execOpts[k] = v
+		}
+	}
+
+	if opts.ReadOnly {
+		execOpts["readonly"] = opts.ReadOnly
+	}
+
+	if opts.PositionalParameters != nil {
+		execOpts["args"] = opts.PositionalParameters
+	} else if opts.NamedParameters != nil {
+		for key, value := range opts.NamedParameters {
+			if !strings.HasPrefix(key, "$") {
+				key = "$" + key
+			}
+			execOpts[key] = value
+		}
+	}
+
+	if opts.ScanCap != 0 {
+		execOpts["scan_cap"] = strconv.Itoa(opts.ScanCap)
+	}
+
+	if opts.PipelineBatch != 0 {
+		execOpts["pipeline_batch"] = strconv.Itoa(opts.ScanCap)
+	}
+
+	if opts.PipelineCap != 0 {
+		execOpts["pipeline_cap"] = strconv.Itoa(opts.ScanCap)
+	}
+
+	return execOpts, nil
 }

@@ -6,19 +6,16 @@ type searchQueryData struct {
 
 // SearchQuery represents a pending search query.
 type SearchQuery struct {
-	name string
-	data searchQueryData
+	Name  string
+	Query interface{}
 }
 
 func (sq *SearchQuery) indexName() string {
-	return sq.name
+	return sq.Name
 }
 
-// NewSearchQuery creates a new SearchQuery object from an index name and query.
-func NewSearchQuery(indexName string, query interface{}) *SearchQuery {
-	q := &SearchQuery{
-		name: indexName,
-	}
-	q.data.Query = query
-	return q
+func (sq *SearchQuery) toSearchQueryData() (*searchQueryData, error) {
+	return &searchQueryData{
+		Query: sq.Query,
+	}, nil
 }

@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 )
 
 // StaleMode specifies the consistency required for a view query.
@@ -32,175 +33,156 @@ const (
 	Descending = SortOrder(2)
 )
 
-// ViewOptions represents the options available when executing view query.
-type ViewOptions struct {
-	options           url.Values
-	development       bool
-	ctx               context.Context
-	parentSpanContext opentracing.SpanContext
-	// errs    MultiError TODO
+// Range specifies a value range to get results between.
+type Range struct {
+	Start        interface{}
+	End          interface{}
+	InclusiveEnd bool
 }
 
-func (vq *ViewOptions) marshalJson(value interface{}) []byte {
+// ViewOptions represents the options available when executing view query.
+type ViewOptions struct {
+	Stale             StaleMode
+	Skip              uint
+	Limit             uint
+	Order             SortOrder
+	Reduce            bool
+	Group             bool
+	GroupLevel        uint
+	Key               interface{}
+	Keys              []interface{}
+	Range             *Range
+	IDRangeStart      string
+	IDRangeEnd        string
+	Development       bool
+	Custom            map[string]string
+	Context           context.Context
+	ParentSpanContext opentracing.SpanContext
+}
+
+func (opts *ViewOptions) toURLValues() (*url.Values, error) {
+	options := &url.Values{}
+
+	if opts.Stale != 0 {
+		if opts.Stale == Before {
+			options.Set("stale", "false")
+		} else if opts.Stale == None {
+			options.Set("stale", "ok")
+		} else if opts.Stale == After {
+			options.Set("stale", "update_after")
+		} else {
+			return nil, errors.New("Unexpected stale option")
+		}
+	}
+
+	if opts.Skip != 0 {
+		options.Set("skip", strconv.FormatUint(uint64(opts.Skip), 10))
+	}
+
+	if opts.Limit != 0 {
+		options.Set("limit", strconv.FormatUint(uint64(opts.Skip), 10))
+	}
+
+	if opts.Order != 0 {
+		if opts.Order == Ascending {
+			options.Set("descending", "false")
+		} else if opts.Order == Descending {
+			options.Set("descending", "true")
+		} else {
+			return nil, errors.New("Unexpected order option")
+		}
+	}
+
+	options.Set("reduce", "false") // is this line necessary?
+	if opts.Reduce {
+		options.Set("reduce", "true")
+	}
+
+	options.Set("group", "false") // is this line necessary?
+	if opts.Group {
+		options.Set("group", "true")
+	}
+
+	if opts.GroupLevel != 0 {
+		options.Set("group_level", strconv.FormatUint(uint64(opts.GroupLevel), 10))
+	}
+
+	if opts.Key != nil {
+		jsonKey, err := opts.marshalJson(opts.Key)
+		if err != nil {
+			return nil, err
+		}
+		options.Set("key", string(jsonKey))
+	}
+
+	if len(opts.Keys) > 0 {
+		jsonKeys, err := opts.marshalJson(opts.Keys)
+		if err != nil {
+			return nil, err
+		}
+		options.Set("keys", string(jsonKeys))
+	}
+
+	if opts.Range != nil {
+		if opts.Range.Start != nil {
+			jsonStartKey, err := opts.marshalJson(opts.Range.Start)
+			if err != nil {
+				return nil, err
+			}
+			options.Set("startkey", string(jsonStartKey))
+		} else {
+			options.Del("startkey")
+		}
+
+		if opts.Range.End != nil {
+			jsonEndKey, err := opts.marshalJson(opts.Range.End)
+			if err != nil {
+				return nil, err
+			}
+			options.Set("endkey", string(jsonEndKey))
+		} else {
+			options.Del("endkey")
+		}
+
+		if opts.Range.Start != nil || opts.Range.End != nil {
+			if opts.Range.InclusiveEnd {
+				options.Set("inclusive_end", "true")
+			} else {
+				options.Set("inclusive_end", "false")
+			}
+		} else {
+			options.Del("inclusive_end")
+		}
+	}
+
+	if opts.IDRangeStart == "" {
+		options.Del("startkey_docid")
+	} else {
+		options.Set("startkey_docid", opts.IDRangeStart)
+	}
+
+	if opts.IDRangeEnd == "" {
+		options.Del("endkey_docid")
+	} else {
+		options.Set("endkey_docid", opts.IDRangeEnd)
+	}
+
+	if opts.Custom != nil {
+		for k, v := range opts.Custom {
+			options.Set(k, v)
+		}
+	}
+
+	return options, nil
+}
+
+func (opts *ViewOptions) marshalJson(value interface{}) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	enc := json.NewEncoder(buf)
 	enc.SetEscapeHTML(false)
 	err := enc.Encode(value)
 	if err != nil {
-		// vq.errs.add(err)
-		return nil
+		return nil, err
 	}
-	return buf.Bytes()
-}
-
-// Stale specifies the level of consistency required for this query.
-func (vq *ViewOptions) Stale(stale StaleMode) *ViewOptions {
-	if stale == Before {
-		vq.options.Set("stale", "false")
-	} else if stale == None {
-		vq.options.Set("stale", "ok")
-	} else if stale == After {
-		vq.options.Set("stale", "update_after")
-	} else {
-		panic("Unexpected stale option")
-	}
-	return vq
-}
-
-// Skip specifies how many results to skip at the beginning of the result list.
-func (vq *ViewOptions) Skip(num uint) *ViewOptions {
-	vq.options.Set("skip", strconv.FormatUint(uint64(num), 10))
-	return vq
-}
-
-// Limit specifies a limit on the number of results to return.
-func (vq *ViewOptions) Limit(num uint) *ViewOptions {
-	vq.options.Set("limit", strconv.FormatUint(uint64(num), 10))
-	return vq
-}
-
-// Order specifies the order to sort the view results in.
-func (vq *ViewOptions) Order(order SortOrder) *ViewOptions {
-	if order == Ascending {
-		vq.options.Set("descending", "false")
-	} else if order == Descending {
-		vq.options.Set("descending", "true")
-	} else {
-		panic("Unexpected order option")
-	}
-	return vq
-}
-
-// Reduce specifies whether to run the reduce part of the map-reduce.
-func (vq *ViewOptions) Reduce(reduce bool) *ViewOptions {
-	if reduce == true {
-		vq.options.Set("reduce", "true")
-	} else {
-		vq.options.Set("reduce", "false")
-	}
-	return vq
-}
-
-// Group specifies whether to group the map-reduce results.
-func (vq *ViewOptions) Group(useGrouping bool) *ViewOptions {
-	if useGrouping {
-		vq.options.Set("group", "true")
-	} else {
-		vq.options.Set("group", "false")
-	}
-	return vq
-}
-
-// GroupLevel specifies at what level to group the map-reduce results.
-func (vq *ViewOptions) GroupLevel(groupLevel uint) *ViewOptions {
-	vq.options.Set("group_level", strconv.FormatUint(uint64(groupLevel), 10))
-	return vq
-}
-
-// Key specifies a specific key to retrieve from the index.
-func (vq *ViewOptions) Key(key interface{}) *ViewOptions {
-	jsonKey := vq.marshalJson(key)
-	vq.options.Set("key", string(jsonKey))
-	return vq
-}
-
-// Keys specifies a list of specific keys to retrieve from the index.
-func (vq *ViewOptions) Keys(keys []interface{}) *ViewOptions {
-	jsonKeys := vq.marshalJson(keys)
-	vq.options.Set("keys", string(jsonKeys))
-	return vq
-}
-
-// Range specifies a value range to get results within.
-func (vq *ViewOptions) Range(start, end interface{}, inclusiveEnd bool) *ViewOptions {
-	// TODO(brett19): Not currently handling errors due to no way to return the error
-	if start != nil {
-		jsonStartKey := vq.marshalJson(start)
-		vq.options.Set("startkey", string(jsonStartKey))
-	} else {
-		vq.options.Del("startkey")
-	}
-	if end != nil {
-		jsonEndKey := vq.marshalJson(end)
-		vq.options.Set("endkey", string(jsonEndKey))
-	} else {
-		vq.options.Del("endkey")
-	}
-	if start != nil || end != nil {
-		if inclusiveEnd {
-			vq.options.Set("inclusive_end", "true")
-		} else {
-			vq.options.Set("inclusive_end", "false")
-		}
-	} else {
-		vq.options.Del("inclusive_end")
-	}
-	return vq
-}
-
-// IdRange specifies a range of document id's to get results within.
-// Usually requires Range to be specified as well.
-func (vq *ViewOptions) IdRange(start, end string) *ViewOptions {
-	if start != "" {
-		vq.options.Set("startkey_docid", start)
-	} else {
-		vq.options.Del("startkey_docid")
-	}
-	if end != "" {
-		vq.options.Set("endkey_docid", end)
-	} else {
-		vq.options.Del("endkey_docid")
-	}
-	return vq
-}
-
-// Development specifies whether to query the production or development design document.
-func (vq *ViewOptions) Development(val bool) *ViewOptions {
-	vq.development = val
-	return vq
-}
-
-// Custom allows specifying custom query options.
-func (vq *ViewOptions) Custom(name, value string) *ViewOptions {
-	vq.options.Set(name, value)
-	return vq
-}
-
-// WithContext sets the context.Context to used for this query.
-func (vq *ViewOptions) WithContext(ctx context.Context) *ViewOptions {
-	vq.ctx = ctx
-	return vq
-}
-
-// WithParentSpanContext set the opentracing.SpanContext to use for this query.
-func (vq *ViewOptions) WithParentSpanContext(ctx opentracing.SpanContext) *ViewOptions {
-	vq.parentSpanContext = ctx
-	return vq
-}
-
-// NewViewQueryOptions creates a new ViewOptions object.
-func NewViewQueryOptions() *ViewOptions {
-	return &ViewOptions{
-		options: url.Values{},
-	}
+	return buf.Bytes(), nil
 }

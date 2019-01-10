@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 )
 
 // SearchHighlightStyle indicates the type of highlighting to use for a search query.
@@ -44,125 +45,83 @@ type searchQueryOptionsData struct {
 	Ctl       *searchQueryCtlData       `json:"ctl,omitempty"`
 }
 
+// SearchHighlightOptions are the options available for search highlighting.
+type SearchHighlightOptions struct {
+	Style  string
+	Fields []string
+}
+
 // SearchQueryOptions represents a pending search query.
 type SearchQueryOptions struct {
-	data              searchQueryOptionsData
-	ctx               context.Context
-	parentSpanContext opentracing.SpanContext
+	Limit             int
+	Skip              int
+	Explain           bool
+	Highlight         *SearchHighlightOptions
+	Fields            []string
+	Sort              []interface{}
+	Facets            map[string]interface{}
+	Timeout           time.Duration
+	Consistency       ConsistencyMode
+	ConsistentWith    *MutationState
+	Context           context.Context
+	ParentSpanContext opentracing.SpanContext
 }
 
-// Limit specifies a limit on the number of results to return.
-func (sq *SearchQueryOptions) Limit(value int) *SearchQueryOptions {
-	sq.data.Size = value
-	return sq
-}
+func (opts *SearchQueryOptions) toOptionsData() (*searchQueryOptionsData, error) {
+	data := &searchQueryOptionsData{}
 
-// Skip specifies how many results to skip at the beginning of the result list.
-func (sq *SearchQueryOptions) Skip(value int) *SearchQueryOptions {
-	sq.data.From = value
-	return sq
-}
+	data.Size = opts.Limit
+	data.From = opts.Skip
+	data.Explain = opts.Explain
+	data.Fields = opts.Fields
+	data.Sort = opts.Sort
 
-// Explain enables search query explanation which provides details on how a query is executed.
-func (sq *SearchQueryOptions) Explain(value bool) *SearchQueryOptions {
-	sq.data.Explain = value
-	return sq
-}
-
-// Highlight specifies how to highlight the hits in the search result.
-func (sq *SearchQueryOptions) Highlight(style SearchHighlightStyle, fields ...string) *SearchQueryOptions {
-	if sq.data.Highlight == nil {
-		sq.data.Highlight = &searchQueryHighlightData{}
-	}
-	sq.data.Highlight.Style = string(style)
-	sq.data.Highlight.Fields = fields
-	return sq
-}
-
-// Fields specifies which fields you wish to return in the results.
-func (sq *SearchQueryOptions) Fields(fields ...string) *SearchQueryOptions {
-	sq.data.Fields = fields
-	return sq
-}
-
-// Sort specifies a sorting order for the results.  Only available in Couchbase Server 4.6+.
-func (sq *SearchQueryOptions) Sort(fields ...interface{}) *SearchQueryOptions {
-	sq.data.Sort = fields
-	return sq
-}
-
-// AddFacet adds a new search facet to include in the results.
-func (sq *SearchQueryOptions) AddFacet(name string, facet interface{}) *SearchQueryOptions {
-	if sq.data.Facets == nil {
-		sq.data.Facets = make(map[string]interface{})
-	}
-	sq.data.Facets[name] = facet
-	return sq
-}
-
-// Timeout indicates the maximum time to wait for this query to complete.
-func (sq *SearchQueryOptions) Timeout(value time.Duration) *SearchQueryOptions {
-	if sq.data.Ctl == nil {
-		sq.data.Ctl = &searchQueryCtlData{}
-	}
-	sq.data.Ctl.Timeout = uint(value / time.Millisecond)
-	return sq
-}
-
-// Consistency specifies the level of consistency required for this query.
-func (sq *SearchQueryOptions) Consistency(stale ConsistencyMode) *SearchQueryOptions {
-	if sq.data.Ctl == nil {
-		sq.data.Ctl = &searchQueryCtlData{}
-	}
-	if sq.data.Ctl.Consistency == nil {
-		sq.data.Ctl.Consistency = &searchQueryConsistencyData{}
+	if opts.Highlight != nil {
+		data.Highlight = &searchQueryHighlightData{}
+		data.Highlight.Style = opts.Highlight.Style
+		data.Highlight.Fields = opts.Highlight.Fields
 	}
 
-	if sq.data.Ctl.Consistency.Vectors != nil {
-		panic("Consistent and ConsistentWith must be used exclusively")
-	}
-	if stale == NotBounded {
-		sq.data.Ctl.Consistency.Level = "not_bounded"
-	} else {
-		panic("Unexpected consistency option")
-	}
-	return sq
-}
-
-// ConsistentWith specifies a mutation state to be consistent with for this query.
-func (sq *SearchQueryOptions) ConsistentWith(state *MutationState) *SearchQueryOptions {
-	if sq.data.Ctl == nil {
-		sq.data.Ctl = &searchQueryCtlData{}
-	}
-	if sq.data.Ctl.Consistency == nil {
-		sq.data.Ctl.Consistency = &searchQueryConsistencyData{}
+	if opts.Facets != nil {
+		data.Facets = make(map[string]interface{})
+		for k, v := range opts.Facets {
+			data.Facets[k] = v
+		}
 	}
 
-	if sq.data.Ctl.Consistency.Level != "" {
-		panic("Consistent and ConsistentWith must be used exclusively")
+	if opts.Timeout != 0 {
+		if data.Ctl == nil {
+			data.Ctl = &searchQueryCtlData{}
+		}
+		data.Ctl.Timeout = uint(opts.Timeout / time.Millisecond)
 	}
-	sq.data.Ctl.Consistency.Level = "at_plus"
-	sq.data.Ctl.Consistency.Vectors = state
-	return sq
-}
 
-// WithContext sets the context.Context to used for this query.
-func (sq *SearchQueryOptions) WithContext(ctx context.Context) *SearchQueryOptions {
-	sq.ctx = ctx
-	return sq
-}
+	if opts.Consistency != 0 && opts.ConsistentWith != nil {
+		return nil, errors.New("Unexpected consistency option")
+	}
 
-// WithParentSpanContext set the opentracing.SpanContext to use for this query.
-func (sq *SearchQueryOptions) WithParentSpanContext(ctx opentracing.SpanContext) *SearchQueryOptions {
-	sq.parentSpanContext = ctx
-	return sq
-}
+	if opts.Consistency != 0 {
+		if data.Ctl == nil {
+			data.Ctl = &searchQueryCtlData{}
+		}
 
-func (sq *SearchQueryOptions) queryData() interface{} {
-	return sq.data
-}
+		data.Ctl.Consistency = &searchQueryConsistencyData{}
+		if opts.Consistency == NotBounded {
+			data.Ctl.Consistency.Level = "not_bounded"
+		} else {
+			return nil, errors.New("Unexpected consistency option")
+		}
+	}
 
-// NewSearchQueryOptions creates a new SearchQueryOptions object.
-func NewSearchQueryOptions() *SearchQueryOptions {
-	return &SearchQueryOptions{}
+	if opts.ConsistentWith != nil {
+		if data.Ctl == nil {
+			data.Ctl = &searchQueryCtlData{}
+		}
+
+		data.Ctl.Consistency = &searchQueryConsistencyData{}
+		data.Ctl.Consistency.Level = "at_plus"
+		data.Ctl.Consistency.Vectors = opts.ConsistentWith
+	}
+
+	return data, nil
 }

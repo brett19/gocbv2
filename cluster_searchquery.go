@@ -152,18 +152,18 @@ func (c *Cluster) SearchQuery(q SearchQuery, opts *SearchQueryOptions) (SearchRe
 	if opts == nil {
 		opts = &SearchQueryOptions{}
 	}
-	ctx := opts.ctx
+	ctx := opts.Context
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	var span opentracing.Span
-	if opts.parentSpanContext == nil {
+	if opts.ParentSpanContext == nil {
 		span = opentracing.GlobalTracer().StartSpan("ExecuteSearchQuery",
 			opentracing.Tag{Key: "couchbase.service", Value: "fts"})
 	} else {
 		span = opentracing.GlobalTracer().StartSpan("ExecuteSearchQuery",
-			opentracing.Tag{Key: "couchbase.service", Value: "fts"}, opentracing.ChildOf(opts.parentSpanContext))
+			opentracing.Tag{Key: "couchbase.service", Value: "fts"}, opentracing.ChildOf(opts.ParentSpanContext))
 	}
 	defer span.Finish()
 
@@ -179,7 +179,12 @@ func (c *Cluster) searchQuery(ctx context.Context, traceCtx opentracing.SpanCont
 	provider queryProvider) (SearchResults, error) {
 
 	qIndexName := q.indexName()
-	qBytes, err := json.Marshal(opts.queryData())
+	optsData, err := opts.toOptionsData()
+	if err != nil {
+		return nil, err
+	}
+
+	qBytes, err := json.Marshal(*optsData)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +224,12 @@ func (c *Cluster) searchQuery(ctx context.Context, traceCtx opentracing.SpanCont
 		return nil, err
 	}
 
-	err = queryData.Set("query", q.data.Query)
+	dq, err := q.toSearchQueryData()
+	if err != nil {
+		return nil, err
+	}
+
+	err = queryData.Set("query", dq.Query)
 
 	// Doing this will set the context deadline to whichever is shorter, what is already set or the timeout
 	// value

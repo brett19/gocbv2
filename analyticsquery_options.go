@@ -2,6 +2,7 @@ package gocb
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -9,89 +10,60 @@ import (
 
 // AnalyticsQueryOptions is the set of options available to an Analytics query.
 type AnalyticsQueryOptions struct {
-	options           map[string]interface{}
-	positionalParams  []interface{}
-	namedParams       map[string]interface{}
-	ctx               context.Context
-	parentSpanContext opentracing.SpanContext
+	ServerSideTimeout    time.Duration
+	Context              context.Context
+	ParentSpanContext    opentracing.SpanContext
+	Pretty               bool
+	ContextID            string
+	RawParam             map[string]interface{}
+	Priority             bool
+	PositionalParameters []interface{}
+	NamedParameters      map[string]interface{}
+
+	// Experimental: This API is subject to change at any time.
+	Deferred bool
 }
 
-// NewAnalyticsQuery creates a new AnalyticsQuery .
-func NewAnalyticsQuery() *AnalyticsQueryOptions {
-	nq := &AnalyticsQueryOptions{
-		options:          make(map[string]interface{}),
-		positionalParams: nil,
-		namedParams:      nil,
+func (opts *AnalyticsQueryOptions) toMap(statement string) (map[string]interface{}, error) {
+	execOpts := make(map[string]interface{})
+	execOpts["statement"] = statement
+
+	if opts.ServerSideTimeout != 0 {
+		execOpts["timeout"] = opts.ServerSideTimeout
 	}
-	return nq
-}
 
-// ServerSideTimeout indicates the maximum time to wait for this query to complete.
-func (aq *AnalyticsQueryOptions) ServerSideTimeout(timeout time.Duration) *AnalyticsQueryOptions {
-	aq.options["timeout"] = timeout.String()
-	return aq
-}
-
-// Pretty indicates whether the response should be nicely formatted.
-func (aq *AnalyticsQueryOptions) Pretty(pretty bool) *AnalyticsQueryOptions {
-	aq.options["pretty"] = pretty
-	return aq
-}
-
-// ContextID sets the client context id for the request, for use with tracing.
-func (aq *AnalyticsQueryOptions) ContextID(clientContextID string) *AnalyticsQueryOptions {
-	aq.options["client_context_id"] = clientContextID
-	return aq
-}
-
-// RawParam allows specifying custom query options.
-func (aq *AnalyticsQueryOptions) RawParam(name string, value interface{}) *AnalyticsQueryOptions {
-	aq.options[name] = value
-	return aq
-}
-
-// Priority sets whether or not the query should be run with priority status.
-func (aq *AnalyticsQueryOptions) Priority(priority bool) *AnalyticsQueryOptions {
-	if priority {
-		aq.options["priority"] = -1
-	} else {
-		delete(aq.options, "priority")
+	if opts.Pretty {
+		execOpts["pretty"] = opts.Pretty
 	}
-	return aq
-}
 
-// PositionalParameters adds a set of positional parameters to be used in this query.
-func (aq *AnalyticsQueryOptions) PositionalParameters(params []interface{}) *AnalyticsQueryOptions {
-	aq.positionalParams = params
-	return aq
-}
-
-// NamedParameters adds a set of positional parameters to be used in this query.
-func (aq *AnalyticsQueryOptions) NamedParameters(params map[string]interface{}) *AnalyticsQueryOptions {
-	aq.namedParams = params
-	return aq
-}
-
-// WithContext sets the context.Context to used for this query.
-func (aq *AnalyticsQueryOptions) WithContext(ctx context.Context) *AnalyticsQueryOptions {
-	aq.ctx = ctx
-	return aq
-}
-
-// WithParentSpanContext set the opentracing.SpanContext to use for this query.
-func (aq *AnalyticsQueryOptions) WithParentSpanContext(ctx opentracing.SpanContext) *AnalyticsQueryOptions {
-	aq.parentSpanContext = ctx
-	return aq
-}
-
-// Deferred sets whether or not the query should be run as a deferred query.
-//
-// Experimental: This API is subject to change at any time.
-func (aq *AnalyticsQueryOptions) Deferred(deferred bool) *AnalyticsQueryOptions {
-	if deferred {
-		aq.options["mode"] = "async"
-	} else {
-		delete(aq.options, "mode")
+	if opts.ContextID != "" {
+		execOpts["client_context_id"] = opts.ContextID
 	}
-	return aq
+
+	if opts.Priority {
+		execOpts["priority"] = -1
+	}
+
+	if opts.Deferred {
+		execOpts["mode"] = "async"
+	}
+
+	if opts.PositionalParameters != nil {
+		execOpts["args"] = opts.PositionalParameters
+	} else if opts.NamedParameters != nil {
+		for key, value := range opts.NamedParameters {
+			if !strings.HasPrefix(key, "$") {
+				key = "$" + key
+			}
+			execOpts[key] = value
+		}
+	}
+
+	if opts.RawParam != nil {
+		for k, v := range opts.RawParam {
+			execOpts[k] = v
+		}
+	}
+
+	return execOpts, nil
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -192,27 +191,6 @@ type queryProvider interface {
 	DoHttpRequest(req *gocbcore.HttpRequest) (*gocbcore.HttpResponse, error)
 }
 
-func createQueryOpts(statement string, opts *QueryOptions) (map[string]interface{}, error) {
-	execOpts := make(map[string]interface{})
-	execOpts["statement"] = statement
-	for k, v := range opts.options {
-		execOpts[k] = v
-	}
-
-	if opts.positionalParams != nil {
-		execOpts["args"] = opts.positionalParams
-	} else if opts.namedParams != nil {
-		for key, value := range opts.namedParams {
-			if !strings.HasPrefix(key, "$") {
-				key = "$" + key
-			}
-			execOpts[key] = value
-		}
-	}
-
-	return execOpts, nil
-}
-
 // Query executes the N1QL query statement on the server n1qlEp.
 // This function assumes that `opts` already contains all the required
 // settings. This function will inject any additional connection or request-level
@@ -221,18 +199,18 @@ func (c *Cluster) Query(statement string, opts *QueryOptions) (QueryResults, err
 	if opts == nil {
 		opts = &QueryOptions{}
 	}
-	ctx := opts.ctx
+	ctx := opts.Context
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	var span opentracing.Span
-	if opts.parentSpanContext == nil {
+	if opts.ParentSpanContext == nil {
 		span = opentracing.GlobalTracer().StartSpan("ExecuteN1QLQuery",
 			opentracing.Tag{Key: "couchbase.service", Value: "n1ql"})
 	} else {
 		span = opentracing.GlobalTracer().StartSpan("ExecuteN1QLQuery",
-			opentracing.Tag{Key: "couchbase.service", Value: "n1ql"}, opentracing.ChildOf(opts.parentSpanContext))
+			opentracing.Tag{Key: "couchbase.service", Value: "n1ql"}, opentracing.ChildOf(opts.ParentSpanContext))
 	}
 	defer span.Finish()
 
@@ -247,7 +225,7 @@ func (c *Cluster) Query(statement string, opts *QueryOptions) (QueryResults, err
 func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, statement string, opts *QueryOptions,
 	provider queryProvider) (QueryResults, error) {
 
-	queryOpts, err := createQueryOpts(statement, opts)
+	queryOpts, err := opts.toMap(statement)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +259,7 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 			return nil, ctx.Err()
 		default:
 			retries++
-			if opts.prepared {
+			if opts.Prepared {
 				etrace := opentracing.GlobalTracer().StartSpan("execute", opentracing.ChildOf(traceCtx))
 				res, err = c.doPreparedN1qlQuery(ctx, traceCtx, queryOpts, provider)
 				etrace.Finish()

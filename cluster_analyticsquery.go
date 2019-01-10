@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -78,28 +77,6 @@ type AnalyticsResultMetrics struct {
 	ErrorCount       uint
 	WarningCount     uint
 	ProcessedObjects uint
-}
-
-// AnalyticsDeferredResultHandle allows access to the handle of a deferred Analytics query.
-//
-// Experimental: This API is subject to change at any time.
-type AnalyticsDeferredResultHandle interface {
-	One(valuePtr interface{}) error
-	Next(valuePtr interface{}) bool
-	NextBytes() []byte
-	Close() error
-
-	Status() (string, error)
-}
-
-type analyticsDeferredResultHandle struct {
-	handleUri string
-	status    string
-	rows      *analyticsRows
-	err       error
-	provider  queryProvider
-	hasResult bool
-	timeout   time.Duration
 }
 
 type analyticsRows struct {
@@ -252,158 +229,23 @@ func (r *analyticsRows) Close() {
 	r.closed = true
 }
 
-// Next assigns the next result from the results into the value pointer, returning whether the read was successful.
-func (r *analyticsDeferredResultHandle) Next(valuePtr interface{}) bool {
-	if r.err != nil {
-		return false
-	}
-
-	row := r.NextBytes()
-	if row == nil {
-		return false
-	}
-
-	r.err = json.Unmarshal(row, valuePtr)
-	if r.err != nil {
-		return false
-	}
-
-	return true
-}
-
-// NextBytes returns the next result from the results as a byte array.
-// TODO: how to deadline/timeout this?
-func (r *analyticsDeferredResultHandle) NextBytes() []byte {
-	if r.err != nil {
-		return nil
-	}
-
-	if r.status == "success" && !r.hasResult {
-		req := &gocbcore.HttpRequest{
-			Service: gocbcore.CbasService,
-			Path:    r.handleUri,
-			Method:  "GET",
-		}
-
-		err := r.executeHandle(req, &r.rows.rows)
-		if err != nil {
-			r.err = err
-			return nil
-		}
-		r.hasResult = true
-	} else if r.status != "success" {
-		return nil
-	}
-
-	return r.rows.NextBytes()
-}
-
-// Close marks the results as closed, returning any errors that occurred during reading the results.
-func (r *analyticsDeferredResultHandle) Close() error {
-	r.rows.Close()
-	return r.err
-}
-
-// One assigns the first value from the results into the value pointer.
-func (r *analyticsDeferredResultHandle) One(valuePtr interface{}) error {
-	if !r.Next(valuePtr) {
-		err := r.Close()
-		if err != nil {
-			return err
-		}
-		// return ErrNoResults
-	}
-
-	// Ignore any errors occurring after we already have our result
-	err := r.Close()
-	if err != nil {
-		// Return no error as we got the one result already.
-		return nil
-	}
-
-	return nil
-}
-
-// Status triggers a network call to the handle URI, returning the current status of the long running query.
-// TODO: how to deadline/timeout this?
-func (r *analyticsDeferredResultHandle) Status() (string, error) {
-	req := &gocbcore.HttpRequest{
-		Service: gocbcore.CbasService,
-		Path:    r.handleUri,
-		Method:  "GET",
-	}
-
-	var resp *analyticsResponseHandle
-	err := r.executeHandle(req, &resp)
-	if err != nil {
-		r.err = err
-		return "", err
-	}
-
-	r.status = resp.Status
-	r.handleUri = resp.Handle
-	return r.status, nil
-}
-
-// TODO: how to deadline/timeout this?
-func (r *analyticsDeferredResultHandle) executeHandle(req *gocbcore.HttpRequest, valuePtr interface{}) error {
-	resp, err := r.provider.DoHttpRequest(req)
-	if err != nil {
-		return err
-	}
-
-	jsonDec := json.NewDecoder(resp.Body)
-	err = jsonDec.Decode(valuePtr)
-	if err != nil {
-		return err
-	}
-
-	err = resp.Body.Close()
-	if err != nil {
-		logDebugf("Failed to close socket (%s)", err)
-	}
-
-	return nil
-}
-
-func createAnalyticsOpts(statement string, opts *AnalyticsQueryOptions) (map[string]interface{}, error) {
-	execOpts := make(map[string]interface{})
-	execOpts["statement"] = statement
-	for k, v := range opts.options {
-		execOpts[k] = v
-	}
-
-	if opts.positionalParams != nil {
-		execOpts["args"] = opts.positionalParams
-	} else if opts.namedParams != nil {
-		for key, value := range opts.namedParams {
-			if !strings.HasPrefix(key, "$") {
-				key = "$" + key
-			}
-			execOpts[key] = value
-		}
-	}
-
-	return execOpts, nil
-}
-
 // AnalyticsQuery performs an analytics query and returns a list of rows or an error.
 func (c *Cluster) AnalyticsQuery(statement string, opts *AnalyticsQueryOptions) (AnalyticsResults, error) {
 	if opts == nil {
 		opts = &AnalyticsQueryOptions{}
 	}
-	ctx := opts.ctx
+	ctx := opts.Context
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	var span opentracing.Span
-	if opts.parentSpanContext == nil {
+	if opts.ParentSpanContext == nil {
 		span = opentracing.GlobalTracer().StartSpan("ExecuteAnalyticsQuery",
 			opentracing.Tag{Key: "couchbase.service", Value: "cbas"})
 	} else {
 		span = opentracing.GlobalTracer().StartSpan("ExecuteAnalyticsQuery",
-			opentracing.Tag{Key: "couchbase.service", Value: "cbas"}, opentracing.ChildOf(opts.parentSpanContext))
+			opentracing.Tag{Key: "couchbase.service", Value: "cbas"}, opentracing.ChildOf(opts.ParentSpanContext))
 	}
 	defer span.Finish()
 
@@ -418,7 +260,7 @@ func (c *Cluster) AnalyticsQuery(statement string, opts *AnalyticsQueryOptions) 
 func (c *Cluster) analyticsQuery(ctx context.Context, traceCtx opentracing.SpanContext, statement string, opts *AnalyticsQueryOptions,
 	provider queryProvider) (resultsOut AnalyticsResults, errOut error) {
 
-	queryOpts, err := createAnalyticsOpts(statement, opts)
+	queryOpts, err := opts.toMap(statement)
 	if err != nil {
 		return nil, err
 	}

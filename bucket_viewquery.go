@@ -121,18 +121,18 @@ func (b *Bucket) ViewQuery(designDoc string, viewName string, opts *ViewOptions)
 	if opts == nil {
 		opts = &ViewOptions{}
 	}
-	ctx := opts.ctx
+	ctx := opts.Context
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	var span opentracing.Span
-	if opts.parentSpanContext == nil {
+	if opts.ParentSpanContext == nil {
 		span = opentracing.GlobalTracer().StartSpan("ExecuteViewQuery",
 			opentracing.Tag{Key: "couchbase.service", Value: "views"})
 	} else {
 		span = opentracing.GlobalTracer().StartSpan("ExecuteViewQuery",
-			opentracing.Tag{Key: "couchbase.service", Value: "views"}, opentracing.ChildOf(opts.parentSpanContext))
+			opentracing.Tag{Key: "couchbase.service", Value: "views"}, opentracing.ChildOf(opts.ParentSpanContext))
 	}
 	defer span.Finish()
 
@@ -141,9 +141,14 @@ func (b *Bucket) ViewQuery(designDoc string, viewName string, opts *ViewOptions)
 		return nil, err
 	}
 
-	designDoc = b.maybePrefixDevDocument(opts.development, designDoc)
+	designDoc = b.maybePrefixDevDocument(opts.Development, designDoc)
 
-	return b.executeViewQuery(ctx, span.Context(), "_view", designDoc, viewName, opts.options, provider)
+	urlValues, err := opts.toURLValues()
+	if err != nil {
+		return nil, err
+	}
+
+	return b.executeViewQuery(ctx, span.Context(), "_view", designDoc, viewName, *urlValues, provider)
 }
 
 // SpatialViewQuery performs a spatial query and returns a list of rows or an error.
@@ -151,18 +156,18 @@ func (b *Bucket) SpatialViewQuery(designDoc string, viewName string, opts *Spati
 	if opts == nil {
 		opts = &SpatialViewOptions{}
 	}
-	ctx := opts.ctx
+	ctx := opts.Context
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	var span opentracing.Span
-	if opts.parentSpanContext == nil {
+	if opts.ParentSpanContext == nil {
 		span = opentracing.GlobalTracer().StartSpan("ExecuteSpatialQuery",
 			opentracing.Tag{Key: "couchbase.service", Value: "views"})
 	} else {
 		span = opentracing.GlobalTracer().StartSpan("ExecuteSpatialQuery",
-			opentracing.Tag{Key: "couchbase.service", Value: "views"}, opentracing.ChildOf(opts.parentSpanContext))
+			opentracing.Tag{Key: "couchbase.service", Value: "views"}, opentracing.ChildOf(opts.ParentSpanContext))
 	}
 	defer span.Finish()
 
@@ -171,9 +176,14 @@ func (b *Bucket) SpatialViewQuery(designDoc string, viewName string, opts *Spati
 		return nil, err
 	}
 
-	designDoc = b.maybePrefixDevDocument(opts.development, designDoc)
+	designDoc = b.maybePrefixDevDocument(opts.Development, designDoc)
 
-	return b.executeViewQuery(ctx, span.Context(), "_spatial", designDoc, viewName, opts.options, provider)
+	urlValues, err := opts.toURLValues()
+	if err != nil {
+		return nil, err
+	}
+
+	return b.executeViewQuery(ctx, span.Context(), "_spatial", designDoc, viewName, *urlValues, provider)
 }
 
 func (b *Bucket) executeViewQuery(ctx context.Context, traceCtx opentracing.SpanContext, viewType, ddoc, viewName string,
