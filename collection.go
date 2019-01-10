@@ -110,6 +110,10 @@ func newCollection(scope *Scope, collectionName string, opts *CollectionOptions)
 	cli := collection.sb.getClient()
 	collectionID, err := cli.fetchCollectionID(deadlinedCtx, collection.sb.ScopeName, collection.sb.CollectionName)
 	if err != nil {
+		if gocbcore.IsErrorStatus(err, gocbcore.StatusScopeUnknown) { //TODO: is this how we want to do this?
+			collection.setScopeUnknown()
+			return nil, kvError{gocbcore.ErrScopeUnknown}
+		}
 		if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) { //TODO: is this how we want to do this?
 			collection.setCollectionUnknown()
 			return nil, kvError{gocbcore.ErrCollectionUnknown}
@@ -130,22 +134,22 @@ func (c *Collection) clone() *Collection {
 	return &newC
 }
 
-func (c *Collection) getKvProviderAndID(ctx context.Context) (uint32, kvProvider, error) {
+func (c *Collection) getKvProvider() (kvProvider, error) {
 	cli := c.sb.getClient()
 	agent, err := cli.getKvProvider()
 	if err != nil {
-		return 0, nil, err
+		return nil, err
 	}
 
 	if c.scopeUnknown() {
-		return 0, nil, kvError{gocbcore.ErrScopeUnknown} // TODO: probably not how we want to do this
+		return nil, kvError{gocbcore.ErrScopeUnknown} // TODO: probably not how we want to do this
 	}
 
 	if c.collectionUnknown() {
-		return 0, nil, kvError{gocbcore.ErrCollectionUnknown} // TODO: probably not how we want to do this
+		return nil, kvError{gocbcore.ErrCollectionUnknown} // TODO: probably not how we want to do this
 	}
 
-	return c.collectionID(), agent, nil
+	return agent, nil
 }
 
 // func (c *Collection) WithDurability(persistTo, replicateTo uint) *Collection {

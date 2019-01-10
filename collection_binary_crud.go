@@ -38,7 +38,7 @@ func (c *CollectionBinary) Append(key string, val []byte, opts *AppendOptions) (
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (c *CollectionBinary) Append(key string, val []byte, opts *AppendOptions) (
 	err = ctrl.Wait(agent.AppendEx(gocbcore.AdjoinOptions{
 		Key:          []byte(key),
 		Value:        val,
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.AdjoinResult, err error) {
 		if err != nil {
@@ -103,7 +103,7 @@ func (c *CollectionBinary) Prepend(key string, val []byte, opts *PrependOptions)
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (c *CollectionBinary) Prepend(key string, val []byte, opts *PrependOptions)
 	err = ctrl.Wait(agent.PrependEx(gocbcore.AdjoinOptions{
 		Key:          []byte(key),
 		Value:        val,
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.AdjoinResult, err error) {
 		if err != nil {
@@ -185,7 +185,7 @@ func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (mutOut *
 		expiry = uint32(opts.ExpireAt.Unix())
 	}
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +193,7 @@ func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (mutOut *
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.IncrementEx(gocbcore.CounterOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		Delta:        opts.Delta,
 		Initial:      realInitial,
 		Expiry:       expiry,
@@ -260,7 +260,7 @@ func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (mutOut *
 		expiry = uint32(opts.ExpireAt.Unix())
 	}
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +268,7 @@ func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (mutOut *
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.DecrementEx(gocbcore.CounterOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		Delta:        opts.Delta,
 		Initial:      realInitial,
 		Expiry:       expiry,

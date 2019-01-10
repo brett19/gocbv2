@@ -140,7 +140,7 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 		encodeFn = DefaultEncode
 	}
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		errOut = err
 		return
@@ -157,7 +157,7 @@ func (c *Collection) Insert(key string, val interface{}, opts *InsertOptions) (m
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.AddEx(gocbcore.AddOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		Value:        bytes,
 		Flags:        flags,
 		Expiry:       opts.Expiration,
@@ -218,7 +218,7 @@ func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (m
 
 	log.Printf("Fetching Agent")
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		errOut = err
 		return
@@ -235,7 +235,7 @@ func (c *Collection) Upsert(key string, val interface{}, opts *UpsertOptions) (m
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.SetEx(gocbcore.SetOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		Value:        bytes,
 		Flags:        flags,
 		Expiry:       opts.Expiration,
@@ -305,7 +305,7 @@ func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) 
 
 	log.Printf("Fetching Agent")
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +320,7 @@ func (c *Collection) Replace(key string, val interface{}, opts *ReplaceOptions) 
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.ReplaceEx(gocbcore.ReplaceOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		Value:        bytes,
 		Flags:        flags,
 		Expiry:       opts.Expiration,
@@ -438,7 +438,7 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 
 // get performs a full document fetch against the collection
 func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts *GetOptions) (docOut *GetResult, errOut error) {
-	collectionID, agent, err := c.getKvProviderAndID(ctx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -446,7 +446,7 @@ func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, 
 	ctrl := c.newOpManager(ctx)
 	err = ctrl.Wait(agent.GetEx(gocbcore.GetOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		TraceContext: traceCtx,
 	}, func(res *gocbcore.GetResult, err error) {
 		if err != nil {
@@ -503,7 +503,7 @@ func (c *Collection) Exists(key string, opts *ExistsOptions) (docOut *ExistsResu
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +511,7 @@ func (c *Collection) Exists(key string, opts *ExistsOptions) (docOut *ExistsResu
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.ObserveEx(gocbcore.ObserveOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		TraceContext: span.Context(),
 		ReplicaIdx:   0,
 	}, func(res *gocbcore.ObserveResult, err error) {
@@ -568,7 +568,7 @@ func (c *Collection) GetFromReplica(key string, replicaIdx int, opts *GetFromRep
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -576,7 +576,7 @@ func (c *Collection) GetFromReplica(key string, replicaIdx int, opts *GetFromRep
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.GetReplicaEx(gocbcore.GetReplicaOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		TraceContext: span.Context(),
 		ReplicaIdx:   0,
 	}, func(res *gocbcore.GetReplicaResult, err error) {
@@ -638,7 +638,7 @@ func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationRe
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -646,7 +646,7 @@ func (c *Collection) Remove(key string, opts *RemoveOptions) (mutOut *MutationRe
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.DeleteEx(gocbcore.DeleteOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		Cas:          gocbcore.Cas(opts.Cas),
 		TraceContext: opts.ParentSpanContext,
 	}, func(res *gocbcore.DeleteResult, err error) {
@@ -775,7 +775,7 @@ func (c *Collection) LookupIn(key string, opts *LookupInOptions) (docOut *Lookup
 }
 
 func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanContext, key string, opts LookupInOptions) (docOut *LookupInResult, errOut error) {
-	collectionID, agent, err := c.getKvProviderAndID(ctx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -818,7 +818,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 		Key:          []byte(key),
 		Flags:        spec.flags,
 		Ops:          spec.ops,
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		TraceContext: traceCtx,
 	}, func(res *gocbcore.LookupInResult, err error) {
 		if err != nil {
@@ -1099,7 +1099,7 @@ func (c *Collection) Mutate(key string, opts MutateInOptions) (mutOut *MutationR
 	span := c.startKvOpTrace(opts.ParentSpanContext, "MutateIn")
 	defer span.Finish()
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -1109,7 +1109,7 @@ func (c *Collection) Mutate(key string, opts MutateInOptions) (mutOut *MutationR
 		Key:          []byte(key),
 		Flags:        opts.spec.flags,
 		Cas:          gocbcore.Cas(opts.Cas),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		Ops:          opts.spec.ops,
 		TraceContext: span.Context(),
 		Expiry:       opts.Expiration,
@@ -1167,7 +1167,7 @@ func (c *Collection) GetAndTouch(key string, expiration uint32, opts *GetAndTouc
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -1175,7 +1175,7 @@ func (c *Collection) GetAndTouch(key string, expiration uint32, opts *GetAndTouc
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.GetAndTouchEx(gocbcore.GetAndTouchOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		Expiry:       expiration,
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.GetAndTouchResult, err error) {
@@ -1233,7 +1233,7 @@ func (c *Collection) GetAndLock(key string, expiration uint32, opts *GetAndLockO
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -1241,7 +1241,7 @@ func (c *Collection) GetAndLock(key string, expiration uint32, opts *GetAndLockO
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.GetAndLockEx(gocbcore.GetAndLockOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		LockTime:     expiration,
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.GetAndLockResult, err error) {
@@ -1300,7 +1300,7 @@ func (c *Collection) Unlock(key string, opts *UnlockOptions) (mutOut *MutationRe
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -1308,7 +1308,7 @@ func (c *Collection) Unlock(key string, opts *UnlockOptions) (mutOut *MutationRe
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.UnlockEx(gocbcore.UnlockOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		Cas:          gocbcore.Cas(opts.Cas),
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.UnlockResult, err error) {
@@ -1366,7 +1366,7 @@ func (c *Collection) Touch(key string, expiration uint32, opts *GetAndTouchOptio
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	collectionID, agent, err := c.getKvProviderAndID(deadlinedCtx)
+	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -1374,7 +1374,7 @@ func (c *Collection) Touch(key string, expiration uint32, opts *GetAndTouchOptio
 	ctrl := c.newOpManager(deadlinedCtx)
 	err = ctrl.Wait(agent.TouchEx(gocbcore.TouchOptions{
 		Key:          []byte(key),
-		CollectionID: collectionID,
+		CollectionID: c.collectionID(),
 		Expiry:       expiration,
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.TouchResult, err error) {
