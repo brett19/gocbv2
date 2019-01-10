@@ -48,13 +48,13 @@ func (b *Bucket) defaultScope() *Scope {
 }
 
 // Collection returns an instance of a collection.
-func (b *Bucket) Collection(scopeName string, collectionName string) *Collection {
-	return b.Scope(scopeName).Collection(collectionName)
+func (b *Bucket) Collection(scopeName string, collectionName string, opts *CollectionOptions) (*Collection, error) {
+	return b.Scope(scopeName).Collection(collectionName, opts)
 }
 
 // DefaultCollection returns an instance of the default collection.
-func (b *Bucket) DefaultCollection() *Collection {
-	return b.defaultScope().DefaultCollection()
+func (b *Bucket) DefaultCollection(opts *CollectionOptions) (*Collection, error) {
+	return b.defaultScope().DefaultCollection(opts)
 }
 
 // Views returns a new ViewsManager for the Bucket.

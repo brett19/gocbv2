@@ -138,7 +138,8 @@ type searchError struct {
 }
 
 func (e *searchError) Error() string {
-	return e.err.Error()
+	// return e.err.Error() TODO
+	return ""
 }
 
 // Retryable verifies whether or not the error is retryable.
@@ -227,7 +228,6 @@ func (c *Cluster) searchQuery(ctx context.Context, traceCtx opentracing.SpanCont
 	defer cancel()
 
 	var retries uint
-	var res QueryResults
 	for {
 		select {
 		case <-ctx.Done():

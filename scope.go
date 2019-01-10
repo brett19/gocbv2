@@ -18,12 +18,12 @@ func (s *Scope) clone() *Scope {
 	return &newS
 }
 
-func (s *Scope) Collection(collectionName string) *Collection {
-	return newCollection(s, collectionName)
+func (s *Scope) Collection(collectionName string, opts *CollectionOptions) (*Collection, error) {
+	return newCollection(s, collectionName, opts)
 }
 
-func (s *Scope) DefaultCollection() *Collection {
-	return s.Collection("_default")
+func (s *Scope) DefaultCollection(opts *CollectionOptions) (*Collection, error) {
+	return s.Collection("_default", opts)
 }
 
 func (s *Scope) stateBlock() stateBlock {

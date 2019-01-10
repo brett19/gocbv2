@@ -34,6 +34,12 @@ type Collection struct {
 	lock sync.Mutex
 }
 
+type CollectionOptions struct {
+	ParentSpanContext opentracing.SpanContext
+	Timeout           time.Duration
+	Context           context.Context
+}
+
 func (c *Collection) setCollectionID(collectionID uint32) error {
 	if c.initialized() {
 		return errors.New("collection already initialized")
@@ -76,7 +82,11 @@ func (c *Collection) collectionUnknown() bool {
 	return c.csb.CollectionUnknown
 }
 
-func newCollection(scope *Scope, collectionName string) *Collection {
+func newCollection(scope *Scope, collectionName string, opts *CollectionOptions) (*Collection, error) {
+	if opts == nil {
+		opts = &CollectionOptions{}
+	}
+
 	collection := &Collection{
 		sb:  scope.stateBlock(),
 		csb: &collectionStateBlock{},
@@ -84,7 +94,35 @@ func newCollection(scope *Scope, collectionName string) *Collection {
 	collection.sb.CollectionName = collectionName
 	collection.sb.KvTimeout = 10 * time.Second
 	collection.sb.recacheClient()
-	return collection
+
+	span := collection.startKvOpTrace(opts.ParentSpanContext, "GetCollectionID")
+	defer span.Finish()
+
+	deadlinedCtx := opts.Context
+	if deadlinedCtx == nil {
+		deadlinedCtx = context.Background()
+	}
+
+	d := collection.deadline(deadlinedCtx, time.Now(), opts.Timeout)
+	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
+	defer cancel()
+
+	cli := collection.sb.getClient()
+	collectionID, err := cli.fetchCollectionID(deadlinedCtx, collection.sb.ScopeName, collection.sb.CollectionName)
+	if err != nil {
+		if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) { //TODO: is this how we want to do this?
+			collection.setCollectionUnknown()
+			return nil, kvError{gocbcore.ErrCollectionUnknown}
+		}
+		return nil, err
+	}
+
+	err = collection.setCollectionID(collectionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return collection, nil
 }
 
 func (c *Collection) clone() *Collection {
@@ -93,8 +131,8 @@ func (c *Collection) clone() *Collection {
 }
 
 func (c *Collection) getKvProviderAndID(ctx context.Context) (uint32, kvProvider, error) {
-	client := c.sb.getClient()
-	agent, err := client.getKvProvider()
+	cli := c.sb.getClient()
+	agent, err := cli.getKvProvider()
 	if err != nil {
 		return 0, nil, err
 	}
@@ -107,22 +145,7 @@ func (c *Collection) getKvProviderAndID(ctx context.Context) (uint32, kvProvider
 		return 0, nil, kvError{gocbcore.ErrCollectionUnknown} // TODO: probably not how we want to do this
 	}
 
-	if c.initialized() {
-		return c.collectionID(), agent, nil
-	}
-
-	collectionID, err := client.fetchCollectionID(ctx, c.sb.ScopeName, c.sb.CollectionName)
-	if err != nil {
-		if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) { //TODO: is this how we want to do this?
-			c.setCollectionUnknown()
-			return 0, nil, kvError{gocbcore.ErrCollectionUnknown}
-		}
-		return 0, nil, err
-	}
-
-	c.setCollectionID(collectionID)
-
-	return collectionID, agent, nil
+	return c.collectionID(), agent, nil
 }
 
 // func (c *Collection) WithDurability(persistTo, replicateTo uint) *Collection {
