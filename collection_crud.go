@@ -1140,7 +1140,7 @@ func (opts *MutateInOptions) Counter(path string, delta int64, createParents boo
 }
 
 // Mutate performs a set of subdocument mutations on the document specified by key.
-func (c *Collection) Mutate(key string, val interface{}, opts *MutateInOptions) (mutOut *MutationResult, errOut error) {
+func (c *Collection) Mutate(key string, opts *MutateInOptions) (mutOut *MutationResult, errOut error) {
 	if opts == nil {
 		opts = &MutateInOptions{}
 	}
