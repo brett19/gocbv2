@@ -3,9 +3,10 @@ package gocb
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/url"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/opentracing/opentracing-go"
 	"gopkg.in/couchbase/gocbcore.v7"
@@ -14,15 +15,6 @@ import (
 type n1qlCache struct {
 	name        string
 	encodedPlan string
-}
-
-type n1qlError struct {
-	Code    uint32 `json:"code"`
-	Message string `json:"msg"`
-}
-
-func (e *n1qlError) Error() string {
-	return fmt.Sprintf("[%d] %s", e.Code, e.Message)
 }
 
 type n1qlResponseMetrics struct {
@@ -40,20 +32,9 @@ type n1qlResponse struct {
 	RequestID       string              `json:"requestID"`
 	ClientContextID string              `json:"clientContextID"`
 	Results         []json.RawMessage   `json:"results,omitempty"`
-	Errors          []n1qlError         `json:"errors,omitempty"`
+	Errors          []queryError        `json:"errors,omitempty"`
 	Status          string              `json:"status"`
 	Metrics         n1qlResponseMetrics `json:"metrics"`
-}
-
-type n1qlMultiError []n1qlError
-
-func (e *n1qlMultiError) Error() string {
-	return (*e)[0].Error()
-}
-
-// Code returns the error code for the error
-func (e *n1qlMultiError) Code() uint32 {
-	return (*e)[0].Code
 }
 
 // QueryResultMetrics encapsulates various metrics gathered during a queries execution.
@@ -142,7 +123,7 @@ func (r *n1qlResults) One(valuePtr interface{}) error {
 		if err != nil {
 			return err
 		}
-		// return ErrNoResults
+		// return ErrNoResults TODO
 	}
 
 	// Ignore any errors occurring after we already have our result
@@ -227,7 +208,7 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 
 	queryOpts, err := opts.toMap(statement)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not parse query options")
 	}
 
 	// Work out which timeout to use, the cluster level default or query specific one
@@ -237,7 +218,7 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 	if castok {
 		optTimeout, err = time.ParseDuration(tmostr)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "could not parse timeout value")
 		}
 	}
 	if optTimeout > 0 && optTimeout < timeout {
@@ -246,7 +227,7 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 	queryOpts["timeout"] = timeout.String()
 
 	// Doing this will set the context deadline to whichever is shorter, what is already set or the timeout
-	// value
+	// value TODO: should timeout be for the operation or per retry?
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -254,28 +235,23 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 	var retries uint
 	var res QueryResults
 	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-			retries++
-			if opts.Prepared {
-				etrace := opentracing.GlobalTracer().StartSpan("execute", opentracing.ChildOf(traceCtx))
-				res, err = c.doPreparedN1qlQuery(ctx, traceCtx, queryOpts, provider)
-				etrace.Finish()
-			} else {
-				res, err = c.executeN1qlQuery(ctx, traceCtx, queryOpts, provider)
-			}
-			if err == nil {
-				return res, err
-			}
-
-			if !isRetryableError(err) || c.sb.N1qlRetryBehavior == nil || !c.sb.N1qlRetryBehavior.CanRetry(retries) {
-				return res, err
-			}
-
-			time.Sleep(c.sb.N1qlRetryBehavior.NextInterval(retries))
+		retries++
+		if opts.Prepared {
+			etrace := opentracing.GlobalTracer().StartSpan("execute", opentracing.ChildOf(traceCtx))
+			res, err = c.doPreparedN1qlQuery(ctx, traceCtx, queryOpts, provider)
+			etrace.Finish()
+		} else {
+			res, err = c.executeN1qlQuery(ctx, traceCtx, queryOpts, provider)
 		}
+		if err == nil {
+			return res, err
+		}
+
+		if !isRetryableError(err) || c.sb.N1qlRetryBehavior == nil || !c.sb.N1qlRetryBehavior.CanRetry(retries) {
+			return res, err
+		}
+
+		time.Sleep(c.sb.N1qlRetryBehavior.NextInterval(retries))
 	}
 }
 
@@ -284,7 +260,7 @@ func (c *Cluster) doPreparedN1qlQuery(ctx context.Context, traceCtx opentracing.
 
 	stmtStr, isStr := queryOpts["statement"].(string)
 	if !isStr {
-		// return nil, ErrCliInternalError
+		// return nil, ErrCliInternalError TODO
 	}
 
 	c.clusterLock.RLock()
@@ -382,7 +358,7 @@ func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.Spa
 
 	reqJSON, err := json.Marshal(opts)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to marshal query request body")
 	}
 
 	req := &gocbcore.HttpRequest{
@@ -398,7 +374,7 @@ func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.Spa
 	resp, err := provider.DoHttpRequest(req)
 	if err != nil {
 		dtrace.Finish()
-		return nil, err
+		return nil, errors.Wrap(err, "could not complete query http request")
 	}
 
 	dtrace.Finish()
@@ -410,7 +386,7 @@ func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.Spa
 	err = jsonDec.Decode(&n1qlResp)
 	if err != nil {
 		strace.Finish()
-		return nil, err
+		return nil, errors.Wrap(err, "failed to decode query response body")
 	}
 
 	err = resp.Body.Close()
@@ -426,14 +402,22 @@ func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.Spa
 	strace.Finish()
 
 	if len(n1qlResp.Errors) > 0 {
-		return nil, (*n1qlMultiError)(&n1qlResp.Errors)
+		errs := make([]QueryError, len(n1qlResp.Errors))
+		for i, e := range n1qlResp.Errors {
+			errs[i] = e
+		}
+		return nil, queryMultiError{
+			errors:     errs,
+			endpoint:   resp.Endpoint,
+			httpStatus: resp.StatusCode,
+			contextID:  n1qlResp.ClientContextID,
+		}
 	}
 
 	if resp.StatusCode != 200 {
-		// return nil, &viewError{
-		// 	Message: "HTTP Error",
-		// 	Reason:  fmt.Sprintf("Status code was %d.", resp.StatusCode),
-		// }
+		return nil, &httpError{
+			statusCode: resp.StatusCode,
+		}
 	}
 
 	elapsedTime, err := time.ParseDuration(n1qlResp.Metrics.ElapsedTime)

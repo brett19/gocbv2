@@ -155,7 +155,7 @@ func TestScenarioB(t *testing.T) {
 	projection.MiddleNames = append(projection.MiddleNames, "James")
 	mutateOpts := MutateInOptions{}.Replace("middleNames", projection.MiddleNames)
 
-	mutRes, err := globalCollection.Mutate("scenariob", mutateOpts)
+	mutRes, err := globalCollection.Mutate("scenariob", &mutateOpts)
 	if err != nil {
 		t.Fatalf("Failed to extract: %s", err)
 	}
@@ -172,7 +172,7 @@ func TestScenarioC(t *testing.T) {
 	// Would need a check to ensure both types of durability can't be set at once if we go this route
 	globalCollection.Upsert("scenarioc", struct{}{}, &UpsertOptions{ReplicateTo: 2, PersistTo: 1})
 
-	globalCollection.Upsert("scenarioc", struct{}{}, &UpsertOptions{WithDurability: DurabilityLevelMajorityAndPersistActive})
+	globalCollection.Upsert("scenarioc", struct{}{}, &UpsertOptions{DurabilityLevel: DurabilityLevelMajorityAndPersistActive})
 }
 
 func TestScenarioD(t *testing.T) {

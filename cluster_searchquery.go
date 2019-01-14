@@ -10,6 +10,7 @@ import (
 	"gopkg.in/couchbase/gocbcore.v7"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 	"gopkg.in/couchbaselabs/jsonx.v1"
 )
 
@@ -75,7 +76,6 @@ type SearchResultStatus struct {
 // SearchResults allows access to the results of a search query.
 type SearchResults interface {
 	Status() SearchResultStatus
-	Errors() []string
 	TotalHits() int
 	Hits() []SearchResultHit
 	Facets() map[string]SearchResultFacet
@@ -100,11 +100,6 @@ type searchResults struct {
 // Status is the status information for the results.
 func (r searchResults) Status() SearchResultStatus {
 	return r.data.Status
-}
-
-// Errors are the errors for the results.
-func (r searchResults) Errors() []string {
-	return r.data.Errors
 }
 
 // TotalHits is the actual number of hits before the limit was applied.
@@ -239,23 +234,18 @@ func (c *Cluster) searchQuery(ctx context.Context, traceCtx opentracing.SpanCont
 
 	var retries uint
 	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-			retries++
-			var res SearchResults
-			res, err = c.executeSearchQuery(ctx, traceCtx, queryData, qIndexName, provider)
-			if err == nil {
-				return res, err
-			}
-
-			if !isRetryableError(err) || c.sb.SearchRetryBehavior == nil || !c.sb.SearchRetryBehavior.CanRetry(retries) {
-				return res, err
-			}
-
-			time.Sleep(c.sb.SearchRetryBehavior.NextInterval(retries))
+		retries++
+		var res SearchResults
+		res, err = c.executeSearchQuery(ctx, traceCtx, queryData, qIndexName, provider)
+		if err == nil {
+			return res, err
 		}
+
+		if !isRetryableError(err) || c.sb.SearchRetryBehavior == nil || !c.sb.SearchRetryBehavior.CanRetry(retries) {
+			return res, err
+		}
+
+		time.Sleep(c.sb.SearchRetryBehavior.NextInterval(retries))
 	}
 }
 
@@ -264,7 +254,7 @@ func (c *Cluster) executeSearchQuery(ctx context.Context, traceCtx opentracing.S
 
 	qBytes, err := json.Marshal(query)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not parse query options")
 	}
 
 	req := &gocbcore.HttpRequest{
@@ -280,7 +270,7 @@ func (c *Cluster) executeSearchQuery(ctx context.Context, traceCtx opentracing.S
 	resp, err := provider.DoHttpRequest(req)
 	if err != nil {
 		dtrace.Finish()
-		return nil, err
+		return nil, errors.Wrap(err, "could not complete query http request")
 	}
 
 	dtrace.Finish()
@@ -288,6 +278,7 @@ func (c *Cluster) executeSearchQuery(ctx context.Context, traceCtx opentracing.S
 	strace := opentracing.GlobalTracer().StartSpan("streaming",
 		opentracing.ChildOf(traceCtx))
 
+	// TODO : Errors(). Partial search results.
 	ftsResp := searchResponse{}
 	errHandled := false
 	switch resp.StatusCode {
@@ -296,7 +287,7 @@ func (c *Cluster) executeSearchQuery(ctx context.Context, traceCtx opentracing.S
 		err = jsonDec.Decode(&ftsResp)
 		if err != nil {
 			strace.Finish()
-			return nil, err
+			return nil, errors.Wrap(err, "failed to decode query response body")
 		}
 	case 400:
 		ftsResp.Status.Total = 1
@@ -324,12 +315,9 @@ func (c *Cluster) executeSearchQuery(ctx context.Context, traceCtx opentracing.S
 	strace.Finish()
 
 	if resp.StatusCode != 200 && !errHandled {
-		// return nil, &searchError{
-		// 	status: resp.StatusCode,
-		// err: viewError{
-		// 	Message: "HTTP Error",
-		// 	Reason:  fmt.Sprintf("Status code was %d.", resp.StatusCode),
-		// }} TODO
+		return nil, &httpError{
+			statusCode: resp.StatusCode,
+		}
 	}
 
 	return searchResults{

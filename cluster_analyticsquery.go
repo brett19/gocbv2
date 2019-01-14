@@ -3,22 +3,13 @@ package gocb
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 	"gopkg.in/couchbase/gocbcore.v7"
 )
-
-type analyticsError struct {
-	Code    uint32 `json:"code"`
-	Message string `json:"msg"`
-}
-
-func (e *analyticsError) Error() string {
-	return fmt.Sprintf("[%d] %s", e.Code, e.Message)
-}
 
 // AnalyticsWarning represents any warning generating during the execution of an Analytics query.
 type AnalyticsWarning struct {
@@ -30,7 +21,7 @@ type analyticsResponse struct {
 	RequestID       string                   `json:"requestID"`
 	ClientContextID string                   `json:"clientContextID"`
 	Results         []json.RawMessage        `json:"results,omitempty"`
-	Errors          []analyticsError         `json:"errors,omitempty"`
+	Errors          []QueryError             `json:"errors,omitempty"`
 	Warnings        []AnalyticsWarning       `json:"warnings,omitempty"`
 	Status          string                   `json:"status,omitempty"`
 	Signature       interface{}              `json:"signature,omitempty"`
@@ -53,17 +44,6 @@ type analyticsResponseMetrics struct {
 type analyticsResponseHandle struct {
 	Status string `json:"status,omitempty"`
 	Handle string `json:"handle,omitempty"`
-}
-
-type analyticsMultiError []analyticsError
-
-func (e *analyticsMultiError) Error() string {
-	return (*e)[0].Error()
-}
-
-// Code is the error code for this error.
-func (e *analyticsMultiError) Code() uint32 {
-	return (*e)[0].Code
 }
 
 // AnalyticsResultMetrics encapsulates various metrics gathered during a queries execution.
@@ -154,7 +134,7 @@ func (r *analyticsResults) One(valuePtr interface{}) error {
 		if err != nil {
 			return err
 		}
-		// return ErrNoResults
+		// return ErrNoResults TODO
 	}
 
 	// Ignore any errors occurring after we already have our result
@@ -262,7 +242,7 @@ func (c *Cluster) analyticsQuery(ctx context.Context, traceCtx opentracing.SpanC
 
 	queryOpts, err := opts.toMap(statement)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not parse query options")
 	}
 
 	// Work out which timeout to use, the cluster level default or query specific one
@@ -272,7 +252,7 @@ func (c *Cluster) analyticsQuery(ctx context.Context, traceCtx opentracing.SpanC
 	if castok {
 		optTimeout, err = time.ParseDuration(tmostr)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "could not parse timeout value")
 		}
 	}
 	if optTimeout > 0 && optTimeout < timeout {
@@ -281,7 +261,7 @@ func (c *Cluster) analyticsQuery(ctx context.Context, traceCtx opentracing.SpanC
 	queryOpts["timeout"] = timeout.String()
 
 	// Doing this will set the context deadline to whichever is shorter, what is already set or the timeout
-	// value
+	// value TODO: should timeout be for the operation or per retry?
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -290,23 +270,18 @@ func (c *Cluster) analyticsQuery(ctx context.Context, traceCtx opentracing.SpanC
 
 	var retries uint
 	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-			retries++
-			var res AnalyticsResults
-			res, err = c.executeAnalyticsQuery(ctx, traceCtx, queryOpts, provider)
-			if err == nil {
-				return res, err
-			}
-
-			if !isRetryableError(err) || c.sb.AnalyticsRetryBehavior == nil || !c.sb.AnalyticsRetryBehavior.CanRetry(retries) {
-				return res, err
-			}
-
-			time.Sleep(c.sb.AnalyticsRetryBehavior.NextInterval(retries))
+		retries++
+		var res AnalyticsResults
+		res, err = c.executeAnalyticsQuery(ctx, traceCtx, queryOpts, provider)
+		if err == nil {
+			return res, err
 		}
+
+		if !isRetryableError(err) || c.sb.AnalyticsRetryBehavior == nil || !c.sb.AnalyticsRetryBehavior.CanRetry(retries) {
+			return res, err
+		}
+
+		time.Sleep(c.sb.AnalyticsRetryBehavior.NextInterval(retries))
 	}
 }
 
@@ -321,7 +296,7 @@ func (c *Cluster) executeAnalyticsQuery(ctx context.Context, traceCtx opentracin
 
 	reqJSON, err := json.Marshal(opts)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to marshal query request body")
 	}
 
 	req := &gocbcore.HttpRequest{
@@ -342,7 +317,7 @@ func (c *Cluster) executeAnalyticsQuery(ctx context.Context, traceCtx opentracin
 	resp, err := provider.DoHttpRequest(req)
 	if err != nil {
 		dtrace.Finish()
-		return nil, err
+		return nil, errors.Wrap(err, "could not complete query http request")
 	}
 
 	dtrace.Finish()
@@ -354,7 +329,7 @@ func (c *Cluster) executeAnalyticsQuery(ctx context.Context, traceCtx opentracin
 	err = jsonDec.Decode(&analyticsResp)
 	if err != nil {
 		strace.Finish()
-		return nil, err
+		return nil, errors.Wrap(err, "failed to decode query response body")
 	}
 
 	err = resp.Body.Close()
@@ -376,14 +351,22 @@ func (c *Cluster) executeAnalyticsQuery(ctx context.Context, traceCtx opentracin
 	}
 
 	if len(analyticsResp.Errors) > 0 {
-		return nil, (*analyticsMultiError)(&analyticsResp.Errors)
+		errs := make([]AnalyticsQueryError, len(analyticsResp.Errors))
+		for i, e := range analyticsResp.Errors {
+			errs[i] = e
+		}
+		return nil, analyticsQueryMultiError{
+			errors:     errs,
+			endpoint:   resp.Endpoint,
+			httpStatus: resp.StatusCode,
+			contextID:  analyticsResp.ClientContextID,
+		}
 	}
 
 	if resp.StatusCode != 200 {
-		// return nil, &viewError{
-		// 	Message: "HTTP Error",
-		// 	Reason:  fmt.Sprintf("Status code was %d.", resp.StatusCode),
-		// }	TODO
+		return nil, &httpError{
+			statusCode: resp.StatusCode,
+		}
 	}
 
 	return &analyticsResults{

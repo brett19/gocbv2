@@ -7,14 +7,11 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/pkg/errors"
+
 	"github.com/opentracing/opentracing-go"
 	gocbcore "gopkg.in/couchbase/gocbcore.v7"
 )
-
-type viewError struct {
-	Message string `json:"message"`
-	Reason  string `json:"reason"`
-}
 
 type viewResponse struct {
 	TotalRows int               `json:"total_rows,omitempty"`
@@ -24,22 +21,13 @@ type viewResponse struct {
 	Errors    []viewError       `json:"errors,omitempty"`
 }
 
-func (e *viewError) Error() string {
-	return e.Message + " - " + e.Reason
-}
-
 // ViewResults implements an iterator interface which can be used to iterate over the rows of the query results.
 type ViewResults interface {
 	One(valuePtr interface{}) error
 	Next(valuePtr interface{}) bool
 	NextBytes() []byte
-	Close() error
-}
-
-// ViewResultMetrics allows access to the TotalRows value from the view response.  This is
-// implemented as an additional interface to maintain ABI compatibility for the 1.x series.
-type ViewResultMetrics interface {
 	TotalRows() int
+	Close() error
 }
 
 type viewResults struct {
@@ -145,7 +133,7 @@ func (b *Bucket) ViewQuery(designDoc string, viewName string, opts *ViewOptions)
 
 	urlValues, err := opts.toURLValues()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not parse query options")
 	}
 
 	return b.executeViewQuery(ctx, span.Context(), "_view", designDoc, viewName, *urlValues, provider)
@@ -180,7 +168,7 @@ func (b *Bucket) SpatialViewQuery(designDoc string, viewName string, opts *Spati
 
 	urlValues, err := opts.toURLValues()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not parse query options")
 	}
 
 	return b.executeViewQuery(ctx, span.Context(), "_spatial", designDoc, viewName, *urlValues, provider)
@@ -202,7 +190,7 @@ func (b *Bucket) executeViewQuery(ctx context.Context, traceCtx opentracing.Span
 	resp, err := provider.DoHttpRequest(req)
 	if err != nil {
 		dtrace.Finish()
-		return nil, err
+		return nil, errors.Wrap(err, "could not complete query http request")
 	}
 
 	dtrace.Finish()
@@ -215,7 +203,7 @@ func (b *Bucket) executeViewQuery(ctx context.Context, traceCtx opentracing.Span
 	err = jsonDec.Decode(&viewResp)
 	if err != nil {
 		strace.Finish()
-		return nil, err
+		return nil, errors.Wrap(err, "failed to decode query response body")
 	}
 
 	err = resp.Body.Close()
@@ -227,31 +215,36 @@ func (b *Bucket) executeViewQuery(ctx context.Context, traceCtx opentracing.Span
 
 	if resp.StatusCode != 200 {
 		if viewResp.Error != "" {
-			// return nil, &viewError{
-			// 	Message: viewResp.Error,
-			// 	Reason:  viewResp.Reason,
-			// } TODO: errors
+			return nil, &viewError{
+				ErrorMessage: viewResp.Error,
+				ErrorReason:  viewResp.Reason,
+			}
 		}
 
-		// return nil, &viewError{
-		// 	Message: "HTTP Error",
-		// 	Reason:  fmt.Sprintf("Status code was %d.", resp.StatusCode),
-		// }
+		return nil, &httpError{
+			statusCode: resp.StatusCode,
+		}
 	}
 
-	// var endErrs MultiError
-	// for _, endErr := range viewResp.Errors {
-	// 	endErrs.add(&viewError{
-	// 		Message: endErr.Message,
-	// 		Reason:  endErr.Reason,
-	// 	})
-	// }
+	// TODO : endErrs. Partial view results.
+	var endErrs viewMultiError
+	if len(viewResp.Errors) > 0 {
+		errs := make([]ViewQueryError, len(viewResp.Errors))
+		for i, e := range errs {
+			errs[i] = e
+		}
+		endErrs = viewMultiError{
+			errors:     errs,
+			endpoint:   resp.Endpoint,
+			httpStatus: resp.StatusCode,
+		}
+	}
 
 	return &viewResults{
 		index:     -1,
 		rows:      viewResp.Rows,
 		totalRows: viewResp.TotalRows,
-		// endErr:    endErrs.get(),
+		endErr:    endErrs,
 	}, nil
 }
 
