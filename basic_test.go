@@ -89,7 +89,7 @@ func TestScenarioB(t *testing.T) {
 	}
 	fmt.Printf("Upsert result: %+v\n", res)
 
-	opts := GetOptions{Timeout: 500 * time.Millisecond}.Project("middleNames", "id")
+	opts := GetOptions{Timeout: 500 * time.Millisecond, Project: []string{"middleNames", "id"}}
 	doc, err := globalCollection.Get("scenariob", &opts)
 	if err != nil {
 		t.Fatalf("Failed to extract: %s", err)

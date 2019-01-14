@@ -394,20 +394,10 @@ type GetOptions struct {
 	Timeout           time.Duration
 	Context           context.Context
 	WithExpiry        bool
-	spec              *LookupInOptions
-}
-
-// Project causes the Get operation to only fetch the fields indicated
-// by the paths. The result of the operation is then treated as a
-// standard GetResult.
-func (opts GetOptions) Project(paths ...string) GetOptions {
-	spec := LookupInOptions{}
-	for _, path := range paths {
-		spec = spec.Path(path)
-	}
-
-	opts.spec = &spec
-	return opts
+	// Project causes the Get operation to only fetch the fields indicated
+	// by the paths. The result of the operation is then treated as a
+	// standard GetResult.
+	Project []string
 }
 
 // Get performs a fetch operation against the collection. This can take 3 paths, a standard full document
@@ -430,26 +420,24 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	if opts.spec == nil && !opts.WithExpiry {
+	if len(opts.Project) == 0 && !opts.WithExpiry {
 		// No projection and no expiry so standard fulldoc
 		docOut, errOut = c.get(deadlinedCtx, span.Context(), key, opts)
 		docOut.id = key
 		return
 	}
 
-	spec := opts.spec
-	if spec == nil {
+	lookupOpts := LookupInOptions{Context: deadlinedCtx, WithExpiry: opts.WithExpiry}
+	if len(opts.Project) == 0 {
 		// This is a subdoc full doc
-		spec = &LookupInOptions{Context: deadlinedCtx, WithExpiry: opts.WithExpiry}
-		*spec = spec.Path("")
+		lookupOpts = lookupOpts.Path("")
+	} else {
+		for _, path := range opts.Project {
+			lookupOpts = lookupOpts.Path(path)
+		}
 	}
 
-	// If len is > 16 then we have to convert to fulldoc
-	if len(spec.spec.ops) > 16 {
-		*spec = spec.Path("")
-	}
-
-	result, err := c.lookupIn(deadlinedCtx, span.Context(), key, *spec)
+	result, err := c.lookupIn(deadlinedCtx, span.Context(), key, lookupOpts)
 	if err != nil {
 		errOut = err
 		return
@@ -460,7 +448,7 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 	doc.expiration = result.expiration
 	doc.cas = result.cas
 	doc.id = key
-	err = doc.fromSubDoc(spec.spec.ops, result)
+	err = doc.fromSubDoc(lookupOpts.spec.ops, result)
 	if err != nil {
 		errOut = err
 		return

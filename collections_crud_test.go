@@ -194,7 +194,7 @@ func TestGetProject(t *testing.T) {
 	}
 	col := testGetCollection(t, provider)
 
-	opts := GetOptions{}.Project("city", "country", "name", "geo.accuracy")
+	opts := GetOptions{Project: []string{"city", "country", "name", "geo.accuracy"}}
 	res, err := col.Get("key", &opts)
 	if err != nil {
 		t.Fatalf("Get encountered error: %v", err)
