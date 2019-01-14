@@ -1,3 +1,5 @@
+// +build integration
+
 package gocb
 
 import (
@@ -7,7 +9,7 @@ import (
 
 func TestBasicQuery(t *testing.T) {
 	query := "select COUNT(*) from test"
-	res, err := globalCluster.Query(query, nil, NewQueryOptions())
+	res, err := globalCluster.Query(query, &QueryOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

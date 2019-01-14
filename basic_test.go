@@ -1,9 +1,10 @@
+// +build integration
+
 package gocb
 
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 )
@@ -12,38 +13,6 @@ type details struct {
 	Name        string   `json:"name,omitempty"`
 	Id          int      `json:"id,omitempty"`
 	MiddleNames []string `json:"middleNames,omitempty"`
-}
-
-var globalCollection *Collection
-var globalCluster *Cluster
-
-func TestMain(m *testing.M) {
-	// SetLogger(VerboseStdioLogger())
-	auth := PasswordAuthenticator{
-		Username: "Administrator",
-		Password: "password",
-	}
-
-	var err error
-	globalCluster, err = NewCluster("couchbase://localhost", ClusterOptions{Authenticator: auth})
-	if err != nil {
-		panic("Failed to connect to cluster: " + err.Error())
-	}
-
-	opts := &BucketOptions{UseMutationTokens: true}
-	bucket, err := globalCluster.Bucket("test", opts)
-	if err != nil {
-		panic("Failed to open bucket: " + err.Error())
-	}
-
-	globalCollection, err = bucket.Collection("_default", "_default", nil)
-	if err != nil {
-		panic("Failed to open collection: " + err.Error())
-	}
-
-	globalCollection.SetKvTimeout(2 * time.Minute)
-
-	os.Exit(m.Run())
 }
 
 func TestScenarioA(t *testing.T) {
@@ -168,40 +137,40 @@ func TestScenarioB(t *testing.T) {
 // Lookup result [Borry Larry]
 // Mutate result &{mt:{token:{VbId:0 VbUuid:0 SeqNo:0} bucketName:test} cas:1543587077158666240}
 
-func TestScenarioC(t *testing.T) {
-	// Would need a check to ensure both types of durability can't be set at once if we go this route
-	globalCollection.Upsert("scenarioc", struct{}{}, &UpsertOptions{ReplicateTo: 2, PersistTo: 1})
+// func TestScenarioC(t *testing.T) {
+// 	// Would need a check to ensure both types of durability can't be set at once if we go this route
+// 	globalCollection.Upsert("scenarioc", struct{}{}, &UpsertOptions{ReplicateTo: 2, PersistTo: 1})
+//
+// 	globalCollection.Upsert("scenarioc", struct{}{}, &UpsertOptions{DurabilityLevel: DurabilityLevelMajorityAndPersistActive})
+// }
 
-	globalCollection.Upsert("scenarioc", struct{}{}, &UpsertOptions{DurabilityLevel: DurabilityLevelMajorityAndPersistActive})
-}
-
-func TestScenarioD(t *testing.T) {
-	_, err := globalCollection.Upsert("scenariod", details{}, nil)
-	if err != nil {
-		t.Fatalf("Failed to upsert key: %s", err)
-	}
-
-	for {
-		doc, err := globalCollection.Get("scenariod", nil)
-		if err != nil {
-			t.Fatalf("Failed to fetch key: %s", err)
-		}
-
-		var thing details
-		err = doc.Content(&thing)
-		if err != nil {
-			t.Fatalf("Failed to fetch key: %s", err)
-		}
-		thing.Name = "Barry"
-
-		_, err = globalCollection.Replace("scenariod", thing, &ReplaceOptions{Cas: doc.Cas()})
-		if err != nil {
-			if IsCasMismatchError(err) {
-				fmt.Println(err.Error()) //could not perform replace: key already exists, or CAS mismatch (KEY_EEXISTS)
-				continue
-			} else {
-				panic(err)
-			}
-		}
-	}
-}
+// func TestScenarioD(t *testing.T) {
+// 	_, err := globalCollection.Upsert("scenariod", details{}, nil)
+// 	if err != nil {
+// 		t.Fatalf("Failed to upsert key: %s", err)
+// 	}
+//
+// 	for {
+// 		doc, err := globalCollection.Get("scenariod", nil)
+// 		if err != nil {
+// 			t.Fatalf("Failed to fetch key: %s", err)
+// 		}
+//
+// 		var thing details
+// 		err = doc.Content(&thing)
+// 		if err != nil {
+// 			t.Fatalf("Failed to fetch key: %s", err)
+// 		}
+// 		thing.Name = "Barry"
+//
+// 		_, err = globalCollection.Replace("scenariod", thing, &ReplaceOptions{Cas: doc.Cas()})
+// 		if err != nil {
+// 			if IsCasMismatchError(err) {
+// 				fmt.Println(err.Error()) //could not perform replace: key already exists, or CAS mismatch (KEY_EEXISTS)
+// 				continue
+// 			} else {
+// 				panic(err)
+// 			}
+// 		}
+// 	}
+// }

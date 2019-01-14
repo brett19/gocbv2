@@ -200,7 +200,7 @@ func TestGetProject(t *testing.T) {
 		t.Fatalf("Get encountered error: %v", err)
 	}
 
-	if !res.HasExpiration() {
+	if res.HasExpiration() {
 		t.Fatalf("Expected document to not have an expiry")
 	}
 

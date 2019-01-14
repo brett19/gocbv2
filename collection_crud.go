@@ -1016,7 +1016,7 @@ func (opts MutateInOptions) Upsert(path string, val interface{}, createParents b
 // Replace replaces the value of the field at path.
 func (opts MutateInOptions) Replace(path string, val interface{}) MutateInOptions {
 	op := gocbcore.SubDocOp{
-		Op:    gocbcore.SubDocOpDelete,
+		Op:    gocbcore.SubDocOpReplace,
 		Path:  path,
 		Flags: gocbcore.SubdocFlagNone,
 		Value: opts.marshalValue(val),
