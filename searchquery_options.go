@@ -47,7 +47,7 @@ type searchQueryOptionsData struct {
 
 // SearchHighlightOptions are the options available for search highlighting.
 type SearchHighlightOptions struct {
-	Style  string
+	Style  SearchHighlightStyle
 	Fields []string
 }
 
@@ -78,7 +78,7 @@ func (opts *SearchQueryOptions) toOptionsData() (*searchQueryOptionsData, error)
 
 	if opts.Highlight != nil {
 		data.Highlight = &searchQueryHighlightData{}
-		data.Highlight.Style = opts.Highlight.Style
+		data.Highlight.Style = string(opts.Highlight.Style)
 		data.Highlight.Fields = opts.Highlight.Fields
 	}
 
