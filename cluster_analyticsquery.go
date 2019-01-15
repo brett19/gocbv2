@@ -329,6 +329,9 @@ func (c *Cluster) executeAnalyticsQuery(ctx context.Context, traceCtx opentracin
 	err = jsonDec.Decode(&analyticsResp)
 	if err != nil {
 		strace.Finish()
+		if err == context.DeadlineExceeded {
+			return nil, timeoutError{}
+		} // TODO: test this...
 		return nil, errors.Wrap(err, "failed to decode query response body")
 	}
 

@@ -80,10 +80,11 @@ func (ctrl *opManager) Wait(op gocbcore.PendingOp, err error) (errOut error) {
 	select {
 	case <-ctrl.ctx.Done():
 		if op.Cancel() {
-			if err == context.DeadlineExceeded {
-				errOut = timeoutError{err: ctrl.ctx.Err()}
+			ctxErr := ctrl.ctx.Err()
+			if ctxErr == context.DeadlineExceeded {
+				errOut = timeoutError{}
 			} else {
-				errOut = ctrl.ctx.Err()
+				errOut = ctxErr
 			}
 		} else {
 			<-ctrl.signal
@@ -100,10 +101,10 @@ type UpsertOptions struct {
 	Timeout           time.Duration
 	Context           context.Context
 	Expiration        uint32
-	Encode            Encode
-	PersistTo         uint
-	ReplicateTo       uint
-	DurabilityLevel   DurabilityLevel
+	// Encode            Encode
+	PersistTo       uint
+	ReplicateTo     uint
+	DurabilityLevel DurabilityLevel
 }
 
 // InsertOptions are options that can be applied to an Insert operation.
@@ -111,11 +112,12 @@ type InsertOptions struct {
 	ParentSpanContext opentracing.SpanContext
 	Timeout           time.Duration
 	Context           context.Context
-	Expiration        uint32
-	Encode            Encode
-	PersistTo         uint
-	ReplicateTo       uint
-	DurabilityLevel   DurabilityLevel
+	// The expiration length in seconds
+	Expiration uint32
+	// Encode            Encode
+	PersistTo       uint
+	ReplicateTo     uint
+	DurabilityLevel DurabilityLevel
 }
 
 // Insert creates a new document in the Collection.
@@ -149,10 +151,10 @@ func (c *Collection) insert(traceCtx opentracing.SpanContext, key string, val in
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	encodeFn := opts.Encode
-	if encodeFn == nil {
-		encodeFn = DefaultEncode
-	}
+	// encodeFn := opts.Encode
+	// if encodeFn == nil {
+	// 	encodeFn = DefaultEncode
+	// }
 
 	agent, err := c.getKvProvider()
 	if err != nil {
@@ -161,7 +163,7 @@ func (c *Collection) insert(traceCtx opentracing.SpanContext, key string, val in
 	}
 
 	encodeSpan := opentracing.GlobalTracer().StartSpan("Encoding", opentracing.ChildOf(traceCtx))
-	bytes, flags, err := encodeFn(val)
+	bytes, flags, err := DefaultEncode(val)
 	if err != nil {
 		errOut = err
 		return
@@ -234,11 +236,9 @@ func (c *Collection) upsert(traceCtx opentracing.SpanContext, key string, val in
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	if opts.Encode == nil {
-		opts.Encode = DefaultEncode
-	}
-
-	log.Printf("Fetching Agent")
+	// if opts.Encode == nil {
+	// 	opts.Encode = DefaultEncode
+	// }
 
 	agent, err := c.getKvProvider()
 	if err != nil {
@@ -248,7 +248,7 @@ func (c *Collection) upsert(traceCtx opentracing.SpanContext, key string, val in
 
 	log.Printf("Transcoding")
 
-	bytes, flags, err := opts.Encode(val)
+	bytes, flags, err := DefaultEncode(val)
 	if err != nil {
 		errOut = err
 		return

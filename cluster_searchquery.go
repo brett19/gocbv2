@@ -270,6 +270,9 @@ func (c *Cluster) executeSearchQuery(ctx context.Context, traceCtx opentracing.S
 	resp, err := provider.DoHttpRequest(req)
 	if err != nil {
 		dtrace.Finish()
+		if err == context.DeadlineExceeded {
+			return nil, timeoutError{}
+		} // TODO: test this...
 		return nil, errors.Wrap(err, "could not complete query http request")
 	}
 

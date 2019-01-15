@@ -190,6 +190,9 @@ func (b *Bucket) executeViewQuery(ctx context.Context, traceCtx opentracing.Span
 	resp, err := provider.DoHttpRequest(req)
 	if err != nil {
 		dtrace.Finish()
+		if err == context.DeadlineExceeded {
+			return nil, timeoutError{}
+		} // TODO: test this...
 		return nil, errors.Wrap(err, "could not complete query http request")
 	}
 

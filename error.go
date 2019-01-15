@@ -10,7 +10,7 @@ import (
 )
 
 type retryAbleError interface {
-	isRetryable() bool
+	Retryable() bool
 }
 
 type bucketNotFoundError struct {
@@ -58,25 +58,33 @@ func (err kvError) Cause() error {
 	return err.err
 }
 
-// TimeoutError occurs when an operation times out
+// TimeoutError occurs when an operation times out.
+type TimeoutError interface {
+	Timeout() bool
+}
+
 type timeoutError struct {
-	err error
 }
 
 func (err timeoutError) Error() string {
-	return err.err.Error()
+	return "operation timed out"
 }
 
-// IsTimeoutError verifies whether or not the cause for an error is a timeout
+func (err timeoutError) Timeout() bool {
+	return true
+}
+
+// IsTimeoutError verifies whether or not the cause for an error is a timeout.
 func IsTimeoutError(err error) bool {
-	cause := errors.Cause(err)
-	if _, ok := cause.(timeoutError); ok {
-		return true
+	switch errType := errors.Cause(err).(type) {
+	case TimeoutError:
+		return errType.Timeout()
+	default:
+		return false
 	}
-
-	return false
 }
 
+// HTTPError is a generic error for HTTP errors.
 type HTTPError interface {
 	error
 	StatusCode() int
@@ -90,10 +98,12 @@ func (e httpError) Error() string {
 	return fmt.Sprintf("an http error occurred with status code: %d", e.statusCode)
 }
 
+// StatusCode returns the HTTP status code for the error.
 func (e httpError) StatusCode() int {
 	return e.statusCode
 }
 
+// ViewQueryError is the error type for an error that occurs during view query execution.
 type ViewQueryError interface {
 	error
 	Reason() string
@@ -109,10 +119,12 @@ func (e *viewError) Error() string {
 	return e.ErrorMessage + " - " + e.ErrorReason
 }
 
+// Reason is the reason for the error occurring.
 func (e *viewError) Reason() string {
 	return e.ErrorReason
 }
 
+// Message
 func (e *viewError) Message() string {
 	return e.ErrorMessage
 }
@@ -173,7 +185,7 @@ func (e analyticsQueryError) Message() string {
 	return e.ErrorMessage
 }
 
-func (e analyticsQueryError) isRetryable() bool {
+func (e analyticsQueryError) Retryable() bool {
 	if e.Code() != 21002 && e.Code() != 23000 && e.Code() != 23003 && e.Code() != 23007 {
 		return true
 	}
@@ -196,7 +208,7 @@ type analyticsQueryMultiError struct {
 	contextID  string
 }
 
-func (e analyticsQueryMultiError) isRetryable() bool {
+func (e analyticsQueryMultiError) Retryable() bool {
 	for _, aErr := range e.errors {
 		if isRetryableError(aErr) {
 			return true
@@ -253,7 +265,7 @@ func (e queryError) Message() string {
 	return e.ErrorMessage
 }
 
-func (e queryError) isRetryable() bool {
+func (e queryError) Retryable() bool {
 	if e.ErrorCode == 4050 || e.ErrorCode == 4070 || e.ErrorCode == 5000 {
 		return true
 	}
@@ -276,7 +288,7 @@ type queryMultiError struct {
 	contextID  string
 }
 
-func (e queryMultiError) isRetryable() bool {
+func (e queryMultiError) Retryable() bool {
 	for _, n1qlErr := range e.errors {
 		if isRetryableError(n1qlErr) {
 			return true
@@ -318,7 +330,7 @@ func ErrorCause(err error) error {
 func isRetryableError(err error) bool {
 	switch errType := errors.Cause(err).(type) {
 	case retryAbleError:
-		return errType.isRetryable()
+		return errType.Retryable()
 	default:
 		return false
 	}

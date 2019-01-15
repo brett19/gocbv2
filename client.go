@@ -167,7 +167,7 @@ func (c *stdClient) fetchCollectionID(ctx context.Context, scopeName string, col
 	case <-ctx.Done():
 		if op.Cancel() {
 			if err == context.DeadlineExceeded {
-				colErr = timeoutError{err: ctx.Err()}
+				colErr = timeoutError{}
 			} else {
 				colErr = ctx.Err()
 			}

@@ -374,6 +374,9 @@ func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.Spa
 	resp, err := provider.DoHttpRequest(req)
 	if err != nil {
 		dtrace.Finish()
+		if err == context.DeadlineExceeded {
+			return nil, timeoutError{}
+		} // TODO: test this...
 		return nil, errors.Wrap(err, "could not complete query http request")
 	}
 
