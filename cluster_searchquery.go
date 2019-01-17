@@ -127,21 +127,6 @@ func (r searchResults) MaxScore() float64 {
 	return r.data.MaxScore
 }
 
-type searchError struct {
-	status int
-	// err    viewError TODO
-}
-
-func (e *searchError) Error() string {
-	// return e.err.Error() TODO
-	return ""
-}
-
-// Retryable verifies whether or not the error is retryable.
-func (e *searchError) Retryable() bool {
-	return e.status == 429
-}
-
 // SearchQuery performs a n1ql query and returns a list of rows or an error.
 func (c *Cluster) SearchQuery(q SearchQuery, opts *SearchQueryOptions) (SearchResults, error) {
 	if opts == nil {
@@ -318,12 +303,36 @@ func (c *Cluster) executeSearchQuery(ctx context.Context, traceCtx opentracing.S
 	strace.Finish()
 
 	if resp.StatusCode != 200 && !errHandled {
-		return nil, &httpError{
+		errOut := &networkError{
 			statusCode: resp.StatusCode,
+		}
+		if resp.StatusCode == 429 {
+			errOut.isRetryable = true
+		}
+
+		return nil, errOut
+	}
+
+	var multiErr searchMultiError
+	if len(ftsResp.Errors) > 0 {
+		errs := make([]SearchError, len(ftsResp.Errors))
+		for i, e := range ftsResp.Errors {
+			errs[i] = searchError{
+				message: e,
+			}
+		}
+		multiErr = searchMultiError{
+			errors:     errs,
+			endpoint:   resp.Endpoint,
+			httpStatus: resp.StatusCode,
+			// contextID:  resp.ClientContextID, TODO?
+		}
+		if ftsResp.Status.Failed != ftsResp.Status.Total {
+			multiErr.partial = true
 		}
 	}
 
 	return searchResults{
 		data: &ftsResp,
-	}, nil
+	}, multiErr
 }

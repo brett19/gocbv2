@@ -28,6 +28,7 @@ type ViewResults interface {
 	NextBytes() []byte
 	TotalRows() int
 	Close() error
+	// TODO: status
 }
 
 type viewResults struct {
@@ -35,7 +36,7 @@ type viewResults struct {
 	rows      []json.RawMessage
 	totalRows int
 	err       error
-	endErr    error
+	// endErr    error
 }
 
 func (r *viewResults) Next(valuePtr interface{}) bool {
@@ -74,9 +75,9 @@ func (r *viewResults) Close() error {
 		return r.err
 	}
 
-	if r.endErr != nil {
-		return r.endErr
-	}
+	// if r.endErr != nil {
+	// 	return r.endErr
+	// }
 
 	return nil
 }
@@ -224,7 +225,7 @@ func (b *Bucket) executeViewQuery(ctx context.Context, traceCtx opentracing.Span
 			}
 		}
 
-		return nil, &httpError{
+		return nil, &networkError{
 			statusCode: resp.StatusCode,
 		}
 	}
@@ -241,14 +242,18 @@ func (b *Bucket) executeViewQuery(ctx context.Context, traceCtx opentracing.Span
 			endpoint:   resp.Endpoint,
 			httpStatus: resp.StatusCode,
 		}
+
+		if len(viewResp.Rows) > 0 {
+			endErrs.partial = true
+		}
 	}
 
 	return &viewResults{
 		index:     -1,
 		rows:      viewResp.Rows,
 		totalRows: viewResp.TotalRows,
-		endErr:    endErrs,
-	}, nil
+		// endErr:    endErrs,
+	}, endErrs
 }
 
 func (b *Bucket) maybePrefixDevDocument(val bool, ddoc string) string {

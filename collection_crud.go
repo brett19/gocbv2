@@ -6,8 +6,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/pkg/errors"
-
 	"github.com/opentracing/opentracing-go"
 	"gopkg.in/couchbase/gocbcore.v7"
 )
@@ -183,7 +181,7 @@ func (c *Collection) insert(traceCtx opentracing.SpanContext, key string, val in
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
 				c.setCollectionUnknown()
 			}
-			errOut = kvError{err}
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}
@@ -267,7 +265,8 @@ func (c *Collection) upsert(traceCtx opentracing.SpanContext, key string, val in
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
 				c.setCollectionUnknown()
 			}
-			errOut = kvError{err}
+
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}
@@ -365,7 +364,7 @@ func (c *Collection) replace(traceCtx opentracing.SpanContext, key string, val i
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
 				c.setCollectionUnknown()
 			}
-			errOut = errors.Wrap(err, "could not perform replace")
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}
@@ -479,7 +478,7 @@ func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, 
 				c.setCollectionUnknown()
 			}
 
-			errOut = err
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}
@@ -545,7 +544,7 @@ func (c *Collection) Exists(key string, opts *ExistsOptions) (docOut *ExistsResu
 				c.setCollectionUnknown()
 			}
 
-			errOut = err
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}
@@ -610,7 +609,7 @@ func (c *Collection) GetFromReplica(key string, replicaIdx int, opts *GetFromRep
 				c.setCollectionUnknown()
 			}
 
-			errOut = err
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}
@@ -691,7 +690,8 @@ func (c *Collection) remove(traceCtx opentracing.SpanContext, key string, opts R
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
 				c.setCollectionUnknown()
 			}
-			errOut = err
+
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}
@@ -865,7 +865,8 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
 				c.setCollectionUnknown()
 			}
-			errOut = err
+
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}
@@ -877,7 +878,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 
 			for i, opRes := range res.Ops {
 				// resSet.contents[i].path = opts.spec.ops[i].Path
-				resSet.contents[i].err = opRes.Err
+				resSet.contents[i].err = maybeEnhanceErr(opRes.Err, key)
 				if opRes.Value != nil {
 					resSet.contents[i].data = append([]byte(nil), opRes.Value...)
 				}
@@ -1181,7 +1182,8 @@ func (c *Collection) mutate(traceCtx opentracing.SpanContext, key string, opts M
 			if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
 				c.setCollectionUnknown()
 			}
-			errOut = err
+
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}
@@ -1247,7 +1249,7 @@ func (c *Collection) GetAndTouch(key string, expiration uint32, opts *GetAndTouc
 				c.setCollectionUnknown()
 			}
 
-			errOut = err
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}
@@ -1313,7 +1315,7 @@ func (c *Collection) GetAndLock(key string, expiration uint32, opts *GetAndLockO
 				c.setCollectionUnknown()
 			}
 
-			errOut = err
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}
@@ -1380,7 +1382,7 @@ func (c *Collection) Unlock(key string, opts *UnlockOptions) (mutOut *MutationRe
 				c.setCollectionUnknown()
 			}
 
-			errOut = err
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}
@@ -1446,7 +1448,7 @@ func (c *Collection) Touch(key string, expiration uint32, opts *GetAndTouchOptio
 				c.setCollectionUnknown()
 			}
 
-			errOut = err
+			errOut = maybeEnhanceErr(err, key)
 			ctrl.Resolve()
 			return
 		}

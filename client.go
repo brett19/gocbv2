@@ -13,7 +13,6 @@ import (
 type client interface {
 	Hash() string
 	connect() error
-	fetchCollectionManifest() (bytesOut []byte, errOut error)
 	fetchCollectionID(ctx context.Context, scopeName string, collectionName string) (uint32, error)
 	getKvProvider() (kvProvider, error)
 	getQueryProvider() (queryProvider, error)
@@ -72,7 +71,7 @@ func (c *stdClient) connect() error {
 
 	agent, err := gocbcore.CreateAgent(config)
 	if err != nil {
-		return kvError{err: errors.Wrap(err, "could not connect to cluster")}
+		return maybeEnhanceErr(err, "")
 	}
 
 	c.agent = agent
@@ -98,42 +97,6 @@ func (c *stdClient) getDiagnosticsProvider() (diagnosticsProvider, error) {
 		return nil, errors.New("Cluster not yet connected")
 	}
 	return c.agent, nil
-}
-
-// TODO: we need to deadline this
-func (c *stdClient) fetchCollectionManifest() (bytesOut []byte, errOut error) {
-	if c.agent == nil {
-		errOut = errors.New("Cluster not yet connected")
-		return
-	}
-
-	waitCh := make(chan struct{})
-
-	c.agent.GetCollectionID("_default", "_default", func(manifestID uint64, collectionID uint32, err error) {
-		if err != nil {
-			errOut = err
-			waitCh <- struct{}{}
-			return
-		}
-
-		// bytesOut = bytes
-		waitCh <- struct{}{}
-	})
-
-	c.agent.GetCollectionManifest(func(bytes []byte, err error) {
-		if err != nil {
-			errOut = err
-			waitCh <- struct{}{}
-			return
-		}
-
-		bytesOut = bytes
-		waitCh <- struct{}{}
-	})
-
-	<-waitCh
-
-	return
 }
 
 func (c *stdClient) fetchCollectionID(ctx context.Context, scopeName string, collectionName string) (uint32, error) {

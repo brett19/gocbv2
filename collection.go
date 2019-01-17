@@ -112,13 +112,13 @@ func newCollection(scope *Scope, collectionName string, opts *CollectionOptions)
 	cli := collection.sb.getClient()
 	collectionID, err := cli.fetchCollectionID(deadlinedCtx, collection.sb.ScopeName, collection.sb.CollectionName)
 	if err != nil {
-		if gocbcore.IsErrorStatus(err, gocbcore.StatusScopeUnknown) { //TODO: is this how we want to do this?
+		if gocbcore.IsErrorStatus(err, gocbcore.StatusScopeUnknown) {
 			collection.setScopeUnknown()
-			return nil, kvError{gocbcore.ErrScopeUnknown}
+			return nil, maybeEnhanceErr(err, "")
 		}
-		if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) { //TODO: is this how we want to do this?
+		if gocbcore.IsErrorStatus(err, gocbcore.StatusCollectionUnknown) {
 			collection.setCollectionUnknown()
-			return nil, kvError{gocbcore.ErrCollectionUnknown}
+			return nil, maybeEnhanceErr(err, "")
 		}
 		return nil, err
 	}
@@ -144,11 +144,17 @@ func (c *Collection) getKvProvider() (kvProvider, error) {
 	}
 
 	if c.scopeUnknown() {
-		return nil, kvError{gocbcore.ErrScopeUnknown} // TODO: probably not how we want to do this
+		return nil, kvError{
+			status:      gocbcore.StatusScopeUnknown,
+			description: "the requested scope cannot be found",
+		}
 	}
 
 	if c.collectionUnknown() {
-		return nil, kvError{gocbcore.ErrCollectionUnknown} // TODO: probably not how we want to do this
+		return nil, kvError{
+			status:      gocbcore.StatusCollectionUnknown,
+			description: "the requested scope cannot be found",
+		}
 	}
 
 	return agent, nil

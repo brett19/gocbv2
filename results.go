@@ -40,12 +40,12 @@ func (d *GetResult) Content(valuePtr interface{}) error {
 
 // Decode assigns the value of the result into the valuePtr using the decode function
 // specified.
-func (d *GetResult) Decode(valuePtr interface{}, decode Decode) error {
-	if decode == nil {
-		decode = DefaultDecode
-	}
-	return decode(d.contents, d.flags, valuePtr)
-}
+// func (d *GetResult) Decode(valuePtr interface{}, decode Decode) error {
+// 	if decode == nil {
+// 		decode = DefaultDecode
+// 	}
+// 	return decode(d.contents, d.flags, valuePtr)
+// }
 
 func (d *GetResult) fromSubDoc(ops []gocbcore.SubDocOp, result *LookupInResult) error {
 	content := make(map[string]interface{})

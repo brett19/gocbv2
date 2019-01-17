@@ -367,7 +367,7 @@ func (c *Cluster) executeAnalyticsQuery(ctx context.Context, traceCtx opentracin
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, &httpError{
+		return nil, &networkError{
 			statusCode: resp.StatusCode,
 		}
 	}

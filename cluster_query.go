@@ -418,7 +418,7 @@ func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.Spa
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, &httpError{
+		return nil, &networkError{
 			statusCode: resp.StatusCode,
 		}
 	}
