@@ -20,6 +20,7 @@ type KeyValueError interface {
 	ID() string
 	StatusCode() int // ?
 	Opaque() uint32
+	KVError() bool
 }
 
 type kvError struct {
@@ -45,11 +46,15 @@ func (err kvError) Opaque() uint32 {
 	return err.opaque
 }
 
+func (err kvError) KVError() bool {
+	return true
+}
+
 // IsScopeUnknownError verifies whether or not the cause for an error is scope unknown
 func IsScopeUnknownError(err error) bool {
 	cause := errors.Cause(err)
-	if kvErr, ok := cause.(kvError); ok {
-		return kvErr.status == gocbcore.StatusScopeUnknown
+	if kvErr, ok := cause.(KeyValueError); ok && kvErr.KVError() {
+		return kvErr.StatusCode() == int(gocbcore.StatusScopeUnknown)
 	}
 
 	return false
@@ -58,8 +63,8 @@ func IsScopeUnknownError(err error) bool {
 // IsCollectionUnknownError verifies whether or not the cause for an error is scope unknown
 func IsCollectionUnknownError(err error) bool {
 	cause := errors.Cause(err)
-	if kvErr, ok := cause.(kvError); ok {
-		return kvErr.status == gocbcore.StatusCollectionUnknown
+	if kvErr, ok := cause.(KeyValueError); ok && kvErr.KVError() {
+		return kvErr.StatusCode() == int(gocbcore.StatusCollectionUnknown)
 	}
 
 	return false
@@ -70,8 +75,8 @@ func IsCollectionUnknownError(err error) bool {
 // key-value "Key Already Exists" error.
 func IsKeyExistsError(err error) bool {
 	cause := errors.Cause(err)
-	if kvErr, ok := cause.(kvError); ok {
-		return kvErr.status == gocbcore.StatusKeyExists
+	if kvErr, ok := cause.(KeyValueError); ok && kvErr.KVError() {
+		return kvErr.StatusCode() == int(gocbcore.StatusKeyExists)
 	}
 
 	return false
@@ -81,8 +86,8 @@ func IsKeyExistsError(err error) bool {
 // key-value "Key Not Found" error.
 func IsKeyNotFoundError(err error) bool {
 	cause := errors.Cause(err)
-	if kvErr, ok := cause.(kvError); ok {
-		return kvErr.status == gocbcore.StatusKeyNotFound
+	if kvErr, ok := cause.(KeyValueError); ok && kvErr.KVError() {
+		return kvErr.StatusCode() == int(gocbcore.StatusKeyNotFound)
 	}
 
 	return false
@@ -92,8 +97,8 @@ func IsKeyNotFoundError(err error) bool {
 // key-value "temporary failure, try again later" error.
 func IsTempFailError(err error) bool {
 	cause := errors.Cause(err)
-	if kvErr, ok := cause.(kvError); ok {
-		return kvErr.status == gocbcore.StatusTmpFail
+	if kvErr, ok := cause.(KeyValueError); ok && kvErr.KVError() {
+		return kvErr.StatusCode() == int(gocbcore.StatusTmpFail)
 	}
 
 	return false
@@ -103,8 +108,8 @@ func IsTempFailError(err error) bool {
 // key-value "document value was too large" error.
 func IsValueTooBigError(err error) bool {
 	cause := errors.Cause(err)
-	if kvErr, ok := cause.(kvError); ok {
-		return kvErr.status == gocbcore.StatusTooBig
+	if kvErr, ok := cause.(KeyValueError); ok && kvErr.KVError() {
+		return kvErr.StatusCode() == int(gocbcore.StatusTooBig)
 	}
 
 	return false
@@ -114,8 +119,8 @@ func IsValueTooBigError(err error) bool {
 // key-value operation failed due to the document being locked.
 func IsKeyLockedError(err error) bool {
 	cause := errors.Cause(err)
-	if kvErr, ok := cause.(kvError); ok {
-		return kvErr.status == gocbcore.StatusLocked
+	if kvErr, ok := cause.(KeyValueError); ok && kvErr.KVError() {
+		return kvErr.StatusCode() == int(gocbcore.StatusLocked)
 	}
 
 	return false
@@ -125,8 +130,8 @@ func IsKeyLockedError(err error) bool {
 // key-value "sub-document path does not exist" error.
 func IsPathNotFoundError(err error) bool {
 	cause := errors.Cause(err)
-	if kvErr, ok := cause.(kvError); ok {
-		return kvErr.status == gocbcore.StatusSubDocPathNotFound
+	if kvErr, ok := cause.(KeyValueError); ok && kvErr.KVError() {
+		return kvErr.StatusCode() == int(gocbcore.StatusSubDocPathNotFound)
 	}
 
 	return false
@@ -136,8 +141,8 @@ func IsPathNotFoundError(err error) bool {
 // key-value "given path already exists in the document" error.
 func IsPathExistsError(err error) bool {
 	cause := errors.Cause(err)
-	if kvErr, ok := cause.(kvError); ok {
-		return kvErr.status == gocbcore.StatusSubDocPathExists
+	if kvErr, ok := cause.(KeyValueError); ok && kvErr.KVError() {
+		return kvErr.StatusCode() == int(gocbcore.StatusSubDocPathExists)
 	}
 
 	return false
@@ -147,8 +152,8 @@ func IsPathExistsError(err error) bool {
 // key-value "requested value is outside range" error.
 func IsInvalidRangeError(err error) bool {
 	cause := errors.Cause(err)
-	if kvErr, ok := cause.(kvError); ok {
-		return kvErr.status == gocbcore.StatusRangeError
+	if kvErr, ok := cause.(KeyValueError); ok && kvErr.KVError() {
+		return kvErr.StatusCode() == int(gocbcore.StatusRangeError)
 	}
 
 	return false
