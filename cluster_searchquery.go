@@ -73,16 +73,6 @@ type SearchResultStatus struct {
 	Successful int `json:"successful,omitempty"`
 }
 
-// SearchResults allows access to the results of a search query.
-type SearchResults interface {
-	Status() SearchResultStatus
-	TotalHits() int
-	Hits() []SearchResultHit
-	Facets() map[string]SearchResultFacet
-	Took() time.Duration
-	MaxScore() float64
-}
-
 type searchResponse struct {
 	Status    SearchResultStatus           `json:"status,omitempty"`
 	Errors    []string                     `json:"errors,omitempty"`
@@ -93,42 +83,43 @@ type searchResponse struct {
 	MaxScore  float64                      `json:"max_score,omitempty"`
 }
 
-type searchResults struct {
+// SearchResults allows access to the results of a search query.
+type SearchResults struct {
 	data *searchResponse
 }
 
 // Status is the status information for the results.
-func (r searchResults) Status() SearchResultStatus {
+func (r SearchResults) Status() SearchResultStatus {
 	return r.data.Status
 }
 
 // TotalHits is the actual number of hits before the limit was applied.
-func (r searchResults) TotalHits() int {
+func (r SearchResults) TotalHits() int {
 	return r.data.TotalHits
 }
 
 // Hits are the matches for the search query.
-func (r searchResults) Hits() []SearchResultHit {
+func (r SearchResults) Hits() []SearchResultHit {
 	return r.data.Hits
 }
 
 // Facets contains the information relative to the facets requested in the search query.
-func (r searchResults) Facets() map[string]SearchResultFacet {
+func (r SearchResults) Facets() map[string]SearchResultFacet {
 	return r.data.Facets
 }
 
 // Took returns the time taken to execute the search.
-func (r searchResults) Took() time.Duration {
+func (r SearchResults) Took() time.Duration {
 	return time.Duration(r.data.Took) / time.Nanosecond
 }
 
 // MaxScore returns the highest score of all documents for this query.
-func (r searchResults) MaxScore() float64 {
+func (r SearchResults) MaxScore() float64 {
 	return r.data.MaxScore
 }
 
 // SearchQuery performs a n1ql query and returns a list of rows or an error.
-func (c *Cluster) SearchQuery(q SearchQuery, opts *SearchQueryOptions) (SearchResults, error) {
+func (c *Cluster) SearchQuery(q SearchQuery, opts *SearchQueryOptions) (*SearchResults, error) {
 	if opts == nil {
 		opts = &SearchQueryOptions{}
 	}
@@ -156,7 +147,7 @@ func (c *Cluster) SearchQuery(q SearchQuery, opts *SearchQueryOptions) (SearchRe
 }
 
 func (c *Cluster) searchQuery(ctx context.Context, traceCtx opentracing.SpanContext, q SearchQuery, opts *SearchQueryOptions,
-	provider queryProvider) (SearchResults, error) {
+	provider queryProvider) (*SearchResults, error) {
 
 	qIndexName := q.indexName()
 	optsData, err := opts.toOptionsData()
@@ -220,7 +211,7 @@ func (c *Cluster) searchQuery(ctx context.Context, traceCtx opentracing.SpanCont
 	var retries uint
 	for {
 		retries++
-		var res SearchResults
+		var res *SearchResults
 		res, err = c.executeSearchQuery(ctx, traceCtx, queryData, qIndexName, provider)
 		if err == nil {
 			return res, err
@@ -235,7 +226,7 @@ func (c *Cluster) searchQuery(ctx context.Context, traceCtx opentracing.SpanCont
 }
 
 func (c *Cluster) executeSearchQuery(ctx context.Context, traceCtx opentracing.SpanContext, query jsonx.DelayedObject,
-	qIndexName string, provider queryProvider) (SearchResults, error) {
+	qIndexName string, provider queryProvider) (*SearchResults, error) {
 
 	qBytes, err := json.Marshal(query)
 	if err != nil {
@@ -332,7 +323,7 @@ func (c *Cluster) executeSearchQuery(ctx context.Context, traceCtx opentracing.S
 		}
 	}
 
-	return searchResults{
+	return &SearchResults{
 		data: &ftsResp,
 	}, multiErr
 }

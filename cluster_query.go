@@ -50,22 +50,7 @@ type QueryResultMetrics struct {
 }
 
 // QueryResults allows access to the results of a N1QL query.
-type QueryResults interface {
-	One(valuePtr interface{}) error
-	Next(valuePtr interface{}) bool
-	NextBytes() []byte
-	Close() error
-
-	RequestID() string
-	ClientContextID() string
-	Metrics() QueryResultMetrics
-
-	// SourceEndpoint returns the source endpoint where the request was sent to.
-	// VOLATILE
-	SourceEndpoint() string
-}
-
-type n1qlResults struct {
+type QueryResults struct {
 	closed          bool
 	index           int
 	rows            []json.RawMessage
@@ -77,7 +62,7 @@ type n1qlResults struct {
 }
 
 // Next assigns the next result from the results into the value pointer, returning whether the read was successful.
-func (r *n1qlResults) Next(valuePtr interface{}) bool {
+func (r *QueryResults) Next(valuePtr interface{}) bool {
 	if r.err != nil {
 		return false
 	}
@@ -96,7 +81,7 @@ func (r *n1qlResults) Next(valuePtr interface{}) bool {
 }
 
 // NextBytes returns the next result from the results as a byte array.
-func (r *n1qlResults) NextBytes() []byte {
+func (r *QueryResults) NextBytes() []byte {
 	if r.err != nil {
 		return nil
 	}
@@ -111,13 +96,13 @@ func (r *n1qlResults) NextBytes() []byte {
 }
 
 // Close marks the results as closed, returning any errors that occurred during reading the results.
-func (r *n1qlResults) Close() error {
+func (r *QueryResults) Close() error {
 	r.closed = true
 	return r.err
 }
 
 // One assigns the first value from the results into the value pointer.
-func (r *n1qlResults) One(valuePtr interface{}) error {
+func (r *QueryResults) One(valuePtr interface{}) error {
 	if !r.Next(valuePtr) {
 		err := r.Close()
 		if err != nil {
@@ -137,12 +122,13 @@ func (r *n1qlResults) One(valuePtr interface{}) error {
 }
 
 // SourceEndpoint returns the endpoint used for execution of this query.
-func (r *n1qlResults) SourceEndpoint() string {
+// VOLATILE
+func (r *QueryResults) SourceEndpoint() string {
 	return r.sourceAddr
 }
 
 // RequestID returns the request ID used for this query.
-func (r *n1qlResults) RequestID() string {
+func (r *QueryResults) RequestID() string {
 	if !r.closed {
 		panic("Result must be closed before accessing meta-data")
 	}
@@ -151,7 +137,7 @@ func (r *n1qlResults) RequestID() string {
 }
 
 // ClientContextID returns the context ID used for this query.
-func (r *n1qlResults) ClientContextID() string {
+func (r *QueryResults) ClientContextID() string {
 	if !r.closed {
 		panic("Result must be closed before accessing meta-data")
 	}
@@ -160,7 +146,7 @@ func (r *n1qlResults) ClientContextID() string {
 }
 
 // Metrics returns metrics about execution of this result.
-func (r *n1qlResults) Metrics() QueryResultMetrics {
+func (r *QueryResults) Metrics() QueryResultMetrics {
 	if !r.closed {
 		panic("Result must be closed before accessing meta-data")
 	}
@@ -176,7 +162,7 @@ type queryProvider interface {
 // This function assumes that `opts` already contains all the required
 // settings. This function will inject any additional connection or request-level
 // settings into the `opts` map (currently this is only the timeout).
-func (c *Cluster) Query(statement string, opts *QueryOptions) (QueryResults, error) {
+func (c *Cluster) Query(statement string, opts *QueryOptions) (*QueryResults, error) {
 	if opts == nil {
 		opts = &QueryOptions{}
 	}
@@ -204,7 +190,7 @@ func (c *Cluster) Query(statement string, opts *QueryOptions) (QueryResults, err
 }
 
 func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, statement string, opts *QueryOptions,
-	provider queryProvider) (QueryResults, error) {
+	provider queryProvider) (*QueryResults, error) {
 
 	queryOpts, err := opts.toMap(statement)
 	if err != nil {
@@ -233,7 +219,7 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 	defer cancel()
 
 	var retries uint
-	var res QueryResults
+	var res *QueryResults
 	for {
 		retries++
 		if opts.Prepared {
@@ -256,7 +242,7 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 }
 
 func (c *Cluster) doPreparedN1qlQuery(ctx context.Context, traceCtx opentracing.SpanContext, queryOpts map[string]interface{},
-	provider queryProvider) (QueryResults, error) {
+	provider queryProvider) (*QueryResults, error) {
 
 	stmtStr, isStr := queryOpts["statement"].(string)
 	if !isStr {
@@ -354,7 +340,7 @@ type n1qlPrepData struct {
 // settings. This function will inject any additional connection or request-level
 // settings into the `opts` map.
 func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.SpanContext, opts map[string]interface{},
-	provider queryProvider) (QueryResults, error) {
+	provider queryProvider) (*QueryResults, error) {
 
 	reqJSON, err := json.Marshal(opts)
 	if err != nil {
@@ -441,7 +427,7 @@ func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.Spa
 		}
 	}
 
-	return &n1qlResults{
+	return &QueryResults{
 		sourceAddr:      epInfo.Host,
 		requestID:       n1qlResp.RequestID,
 		clientContextID: n1qlResp.ClientContextID,

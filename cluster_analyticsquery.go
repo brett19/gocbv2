@@ -21,7 +21,7 @@ type analyticsResponse struct {
 	RequestID       string                   `json:"requestID"`
 	ClientContextID string                   `json:"clientContextID"`
 	Results         []json.RawMessage        `json:"results,omitempty"`
-	Errors          []QueryError             `json:"errors,omitempty"`
+	Errors          []analyticsQueryError    `json:"errors,omitempty"`
 	Warnings        []AnalyticsWarning       `json:"warnings,omitempty"`
 	Status          string                   `json:"status,omitempty"`
 	Signature       interface{}              `json:"signature,omitempty"`
@@ -66,22 +66,7 @@ type analyticsRows struct {
 }
 
 // AnalyticsResults allows access to the results of a Analytics query.
-type AnalyticsResults interface {
-	One(valuePtr interface{}) error
-	Next(valuePtr interface{}) bool
-	NextBytes() []byte
-	Close() error
-
-	RequestID() string
-	ClientContextID() string
-	Status() string
-	Warnings() []AnalyticsWarning
-	Signature() interface{}
-	Metrics() AnalyticsResultMetrics
-	Handle() AnalyticsDeferredResultHandle
-}
-
-type analyticsResults struct {
+type AnalyticsResults struct {
 	rows            *analyticsRows
 	err             error
 	requestID       string
@@ -94,7 +79,7 @@ type analyticsResults struct {
 }
 
 // NextBytes assigns the next result from the results into the value pointer, returning whether the read was successful.
-func (r *analyticsResults) Next(valuePtr interface{}) bool {
+func (r *AnalyticsResults) Next(valuePtr interface{}) bool {
 	if r.err != nil {
 		return false
 	}
@@ -113,7 +98,7 @@ func (r *analyticsResults) Next(valuePtr interface{}) bool {
 }
 
 // NextBytes returns the next result from the results as a byte array.
-func (r *analyticsResults) NextBytes() []byte {
+func (r *AnalyticsResults) NextBytes() []byte {
 	if r.err != nil {
 		return nil
 	}
@@ -122,13 +107,13 @@ func (r *analyticsResults) NextBytes() []byte {
 }
 
 // Close marks the results as closed, returning any errors that occurred during reading the results.
-func (r *analyticsResults) Close() error {
+func (r *AnalyticsResults) Close() error {
 	r.rows.Close()
 	return r.err
 }
 
 // One assigns the first value from the results into the value pointer.
-func (r *analyticsResults) One(valuePtr interface{}) error {
+func (r *AnalyticsResults) One(valuePtr interface{}) error {
 	if !r.Next(valuePtr) {
 		err := r.Close()
 		if err != nil {
@@ -148,27 +133,27 @@ func (r *analyticsResults) One(valuePtr interface{}) error {
 }
 
 // Warnings returns any warnings that occurred during query execution.
-func (r *analyticsResults) Warnings() []AnalyticsWarning {
+func (r *AnalyticsResults) Warnings() []AnalyticsWarning {
 	return r.warnings
 }
 
 // Status returns the status for the results.
-func (r *analyticsResults) Status() string {
+func (r *AnalyticsResults) Status() string {
 	return r.status
 }
 
 // Signature returns TODO
-func (r *analyticsResults) Signature() interface{} {
+func (r *AnalyticsResults) Signature() interface{} {
 	return r.signature
 }
 
 // Metrics returns metrics about execution of this result.
-func (r *analyticsResults) Metrics() AnalyticsResultMetrics {
+func (r *AnalyticsResults) Metrics() AnalyticsResultMetrics {
 	return r.metrics
 }
 
 // RequestID returns the request ID used for this query.
-func (r *analyticsResults) RequestID() string {
+func (r *AnalyticsResults) RequestID() string {
 	if !r.rows.closed {
 		panic("Result must be closed before accessing meta-data")
 	}
@@ -177,7 +162,7 @@ func (r *analyticsResults) RequestID() string {
 }
 
 // ClientContextID returns the context ID used for this query.
-func (r *analyticsResults) ClientContextID() string {
+func (r *AnalyticsResults) ClientContextID() string {
 	if !r.rows.closed {
 		panic("Result must be closed before accessing meta-data")
 	}
@@ -189,7 +174,7 @@ func (r *analyticsResults) ClientContextID() string {
 // the result is ready to be read.
 //
 // Experimental: This API is subject to change at any time.
-func (r *analyticsResults) Handle() AnalyticsDeferredResultHandle {
+func (r *AnalyticsResults) Handle() AnalyticsDeferredResultHandle {
 	return r.handle
 }
 
@@ -210,7 +195,7 @@ func (r *analyticsRows) Close() {
 }
 
 // AnalyticsQuery performs an analytics query and returns a list of rows or an error.
-func (c *Cluster) AnalyticsQuery(statement string, opts *AnalyticsQueryOptions) (AnalyticsResults, error) {
+func (c *Cluster) AnalyticsQuery(statement string, opts *AnalyticsQueryOptions) (*AnalyticsResults, error) {
 	if opts == nil {
 		opts = &AnalyticsQueryOptions{}
 	}
@@ -238,7 +223,7 @@ func (c *Cluster) AnalyticsQuery(statement string, opts *AnalyticsQueryOptions) 
 }
 
 func (c *Cluster) analyticsQuery(ctx context.Context, traceCtx opentracing.SpanContext, statement string, opts *AnalyticsQueryOptions,
-	provider queryProvider) (resultsOut AnalyticsResults, errOut error) {
+	provider queryProvider) (resultsOut *AnalyticsResults, errOut error) {
 
 	queryOpts, err := opts.toMap(statement)
 	if err != nil {
@@ -271,7 +256,7 @@ func (c *Cluster) analyticsQuery(ctx context.Context, traceCtx opentracing.SpanC
 	var retries uint
 	for {
 		retries++
-		var res AnalyticsResults
+		var res *AnalyticsResults
 		res, err = c.executeAnalyticsQuery(ctx, traceCtx, queryOpts, provider)
 		if err == nil {
 			return res, err
@@ -286,7 +271,7 @@ func (c *Cluster) analyticsQuery(ctx context.Context, traceCtx opentracing.SpanC
 }
 
 func (c *Cluster) executeAnalyticsQuery(ctx context.Context, traceCtx opentracing.SpanContext, opts map[string]interface{},
-	provider queryProvider) (AnalyticsResults, error) {
+	provider queryProvider) (*AnalyticsResults, error) {
 
 	// priority is sent as a header not in the body
 	priority, priorityCastOK := opts["priority"].(int)
@@ -372,7 +357,7 @@ func (c *Cluster) executeAnalyticsQuery(ctx context.Context, traceCtx opentracin
 		}
 	}
 
-	return &analyticsResults{
+	return &AnalyticsResults{
 		requestID:       analyticsResp.RequestID,
 		clientContextID: analyticsResp.ClientContextID,
 		rows: &analyticsRows{

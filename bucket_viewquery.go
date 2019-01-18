@@ -22,16 +22,7 @@ type viewResponse struct {
 }
 
 // ViewResults implements an iterator interface which can be used to iterate over the rows of the query results.
-type ViewResults interface {
-	One(valuePtr interface{}) error
-	Next(valuePtr interface{}) bool
-	NextBytes() []byte
-	TotalRows() int
-	Close() error
-	// TODO: status
-}
-
-type viewResults struct {
+type ViewResults struct {
 	index     int
 	rows      []json.RawMessage
 	totalRows int
@@ -39,7 +30,7 @@ type viewResults struct {
 	// endErr    error
 }
 
-func (r *viewResults) Next(valuePtr interface{}) bool {
+func (r *ViewResults) Next(valuePtr interface{}) bool {
 	if r.err != nil {
 		return false
 	}
@@ -57,7 +48,7 @@ func (r *viewResults) Next(valuePtr interface{}) bool {
 	return true
 }
 
-func (r *viewResults) NextBytes() []byte {
+func (r *ViewResults) NextBytes() []byte {
 	if r.err != nil {
 		return nil
 	}
@@ -70,7 +61,7 @@ func (r *viewResults) NextBytes() []byte {
 	return r.rows[r.index]
 }
 
-func (r *viewResults) Close() error {
+func (r *ViewResults) Close() error {
 	if r.err != nil {
 		return r.err
 	}
@@ -82,7 +73,7 @@ func (r *viewResults) Close() error {
 	return nil
 }
 
-func (r *viewResults) One(valuePtr interface{}) error {
+func (r *ViewResults) One(valuePtr interface{}) error {
 	if !r.Next(valuePtr) {
 		err := r.Close()
 		if err != nil {
@@ -101,12 +92,12 @@ func (r *viewResults) One(valuePtr interface{}) error {
 	return nil
 }
 
-func (r *viewResults) TotalRows() int {
+func (r *ViewResults) TotalRows() int {
 	return r.totalRows
 }
 
 // ViewQuery performs a view query and returns a list of rows or an error.
-func (b *Bucket) ViewQuery(designDoc string, viewName string, opts *ViewOptions) (ViewResults, error) {
+func (b *Bucket) ViewQuery(designDoc string, viewName string, opts *ViewOptions) (*ViewResults, error) {
 	if opts == nil {
 		opts = &ViewOptions{}
 	}
@@ -141,7 +132,7 @@ func (b *Bucket) ViewQuery(designDoc string, viewName string, opts *ViewOptions)
 }
 
 // SpatialViewQuery performs a spatial query and returns a list of rows or an error.
-func (b *Bucket) SpatialViewQuery(designDoc string, viewName string, opts *SpatialViewOptions) (ViewResults, error) {
+func (b *Bucket) SpatialViewQuery(designDoc string, viewName string, opts *SpatialViewOptions) (*ViewResults, error) {
 	if opts == nil {
 		opts = &SpatialViewOptions{}
 	}
@@ -176,7 +167,7 @@ func (b *Bucket) SpatialViewQuery(designDoc string, viewName string, opts *Spati
 }
 
 func (b *Bucket) executeViewQuery(ctx context.Context, traceCtx opentracing.SpanContext, viewType, ddoc, viewName string,
-	options url.Values, provider queryProvider) (ViewResults, error) {
+	options url.Values, provider queryProvider) (*ViewResults, error) {
 
 	reqUri := fmt.Sprintf("/_design/%s/%s/%s?%s", ddoc, viewType, viewName, options.Encode())
 	req := &gocbcore.HttpRequest{
@@ -248,7 +239,7 @@ func (b *Bucket) executeViewQuery(ctx context.Context, traceCtx opentracing.Span
 		}
 	}
 
-	return &viewResults{
+	return &ViewResults{
 		index:     -1,
 		rows:      viewResp.Rows,
 		totalRows: viewResp.TotalRows,
