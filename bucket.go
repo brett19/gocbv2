@@ -10,21 +10,25 @@ type BucketOptions struct {
 	UseMutationTokens bool
 }
 
-func newBucket(c *Cluster, bucketName string, opts BucketOptions) *Bucket {
+func newBucket(sb *stateBlock, bucketName string, opts BucketOptions) *Bucket {
 	return &Bucket{
 		sb: stateBlock{
-			cluster: c,
 			clientStateBlock: clientStateBlock{
 				BucketName:        bucketName,
 				UseMutationTokens: opts.UseMutationTokens,
 			},
+			N1qlTimeout:      sb.N1qlTimeout,
+			SearchTimeout:    sb.SearchTimeout,
+			AnalyticsTimeout: sb.AnalyticsTimeout,
+
+			client: sb.client,
 		},
 	}
 }
 
 func (b *Bucket) connect() error {
 	b.sb.recacheClient()
-	cli := b.sb.getClient()
+	cli := b.sb.getCachedClient()
 	return cli.connect()
 }
 

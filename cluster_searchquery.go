@@ -147,7 +147,7 @@ func (c *Cluster) SearchQuery(q SearchQuery, opts *SearchQueryOptions) (*SearchR
 }
 
 func (c *Cluster) searchQuery(ctx context.Context, traceCtx opentracing.SpanContext, q SearchQuery, opts *SearchQueryOptions,
-	provider queryProvider) (*SearchResults, error) {
+	provider httpProvider) (*SearchResults, error) {
 
 	qIndexName := q.indexName()
 	optsData, err := opts.toOptionsData()
@@ -226,7 +226,7 @@ func (c *Cluster) searchQuery(ctx context.Context, traceCtx opentracing.SpanCont
 }
 
 func (c *Cluster) executeSearchQuery(ctx context.Context, traceCtx opentracing.SpanContext, query jsonx.DelayedObject,
-	qIndexName string, provider queryProvider) (*SearchResults, error) {
+	qIndexName string, provider httpProvider) (*SearchResults, error) {
 
 	qBytes, err := json.Marshal(query)
 	if err != nil {

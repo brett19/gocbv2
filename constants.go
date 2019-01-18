@@ -4,6 +4,10 @@ import (
 	"gopkg.in/couchbase/gocbcore.v7"
 )
 
+const (
+	goCbVersionStr = "v2.0.0-dev"
+)
+
 // ServiceType specifies a particular Couchbase service type.
 type ServiceType gocbcore.ServiceType
 

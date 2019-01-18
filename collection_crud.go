@@ -29,7 +29,7 @@ type kvProvider interface {
 	DecrementEx(opts gocbcore.CounterOptions, cb gocbcore.CounterExCallback) (gocbcore.PendingOp, error)
 	AppendEx(opts gocbcore.AdjoinOptions, cb gocbcore.AdjoinExCallback) (gocbcore.PendingOp, error)
 	PrependEx(opts gocbcore.AdjoinOptions, cb gocbcore.AdjoinExCallback) (gocbcore.PendingOp, error)
-	NumReplicas() int // UNSURE THIS SSHOULDNT BE ON ANOTHER INTERFACE
+	NumReplicas() int // UNSURE THIS SHOULDNT BE ON ANOTHER INTERFACE
 }
 
 // shortestTime calculates the shortest of two times, this is used for context deadlines.

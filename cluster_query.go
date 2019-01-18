@@ -154,7 +154,7 @@ func (r *QueryResults) Metrics() QueryResultMetrics {
 	return r.metrics
 }
 
-type queryProvider interface {
+type httpProvider interface {
 	DoHttpRequest(req *gocbcore.HttpRequest) (*gocbcore.HttpResponse, error)
 }
 
@@ -190,7 +190,7 @@ func (c *Cluster) Query(statement string, opts *QueryOptions) (*QueryResults, er
 }
 
 func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, statement string, opts *QueryOptions,
-	provider queryProvider) (*QueryResults, error) {
+	provider httpProvider) (*QueryResults, error) {
 
 	queryOpts, err := opts.toMap(statement)
 	if err != nil {
@@ -242,7 +242,7 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 }
 
 func (c *Cluster) doPreparedN1qlQuery(ctx context.Context, traceCtx opentracing.SpanContext, queryOpts map[string]interface{},
-	provider queryProvider) (*QueryResults, error) {
+	provider httpProvider) (*QueryResults, error) {
 
 	stmtStr, isStr := queryOpts["statement"].(string)
 	if !isStr {
@@ -305,7 +305,7 @@ func (c *Cluster) doPreparedN1qlQuery(ctx context.Context, traceCtx opentracing.
 }
 
 func (c *Cluster) prepareN1qlQuery(ctx context.Context, traceCtx opentracing.SpanContext, opts map[string]interface{},
-	provider queryProvider) (*n1qlCache, error) {
+	provider httpProvider) (*n1qlCache, error) {
 
 	prepOpts := make(map[string]interface{})
 	for k, v := range opts {
@@ -340,7 +340,7 @@ type n1qlPrepData struct {
 // settings. This function will inject any additional connection or request-level
 // settings into the `opts` map.
 func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.SpanContext, opts map[string]interface{},
-	provider queryProvider) (*QueryResults, error) {
+	provider httpProvider) (*QueryResults, error) {
 
 	reqJSON, err := json.Marshal(opts)
 	if err != nil {

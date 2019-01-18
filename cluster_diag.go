@@ -11,6 +11,7 @@ import (
 
 type diagnosticsProvider interface {
 	Diagnostics() (*gocbcore.DiagnosticInfo, error)
+	PingKvEx(opts gocbcore.PingKvOptions, cb gocbcore.PingKvExCallback) (gocbcore.PendingOp, error)
 }
 
 func diagServiceString(service ServiceType) string {
@@ -29,6 +30,24 @@ func diagServiceString(service ServiceType) string {
 		return "cbas"
 	}
 	return "?"
+}
+
+func diagStringService(service string) ServiceType {
+	switch service {
+	case "kv":
+		return MemdService
+	case "view":
+		return CapiService
+	case "mgmt":
+		return MgmtService
+	case "n1ql":
+		return N1qlService
+	case "fts":
+		return FtsService
+	case "cbas":
+		return CbasService
+	}
+	return ServiceType(0)
 }
 
 // DiagConnState represents the state of a connection in a diagnostics report.

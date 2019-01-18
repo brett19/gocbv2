@@ -14,6 +14,7 @@ type mockClient struct {
 	collectionId      uint32
 	scopeId           uint32
 	mockKvProvider    kvProvider
+	mockHTTPProvider  httpProvider
 }
 
 type mockKvOperator struct {
@@ -25,6 +26,11 @@ type mockKvOperator struct {
 	datatype              uint8
 	err                   error
 	opCancellationSuccess bool
+}
+
+type mockHTTPProvider struct {
+	resp *gocbcore.HttpResponse
+	err  error
 }
 
 type mockPendingOp struct {
@@ -319,6 +325,10 @@ func (mko *mockKvOperator) NumReplicas() int {
 	return 0
 }
 
+func (p *mockHTTPProvider) DoHttpRequest(req *gocbcore.HttpRequest) (*gocbcore.HttpResponse, error) {
+	return p.resp, p.err
+}
+
 func (mc *mockClient) Hash() string {
 	return fmt.Sprintf("%s-%t",
 		mc.bucketName,
@@ -333,10 +343,6 @@ func (mc *mockClient) close() error {
 	return nil
 }
 
-func (mc *mockClient) fetchCollectionManifest() (bytesOut []byte, errOut error) {
-	return []byte{}, nil
-}
-
 func (mc *mockClient) fetchCollectionID(ctx context.Context, scopeName string, collectionName string) (uint32, error) {
 	return mc.collectionId, nil
 }
@@ -345,8 +351,8 @@ func (mc *mockClient) getKvProvider() (kvProvider, error) {
 	return mc.mockKvProvider, nil
 }
 
-func (mc *mockClient) getQueryProvider() (queryProvider, error) {
-	return nil, nil
+func (mc *mockClient) getHTTPProvider() (httpProvider, error) {
+	return mc.mockHTTPProvider, nil
 }
 
 func (mc *mockClient) getDiagnosticsProvider() (diagnosticsProvider, error) {

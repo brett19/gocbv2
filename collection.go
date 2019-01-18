@@ -109,7 +109,7 @@ func newCollection(scope *Scope, collectionName string, opts *CollectionOptions)
 	deadlinedCtx, cancel := context.WithDeadline(deadlinedCtx, d)
 	defer cancel()
 
-	cli := collection.sb.getClient()
+	cli := collection.sb.getCachedClient()
 	collectionID, err := cli.fetchCollectionID(deadlinedCtx, collection.sb.ScopeName, collection.sb.CollectionName)
 	if err != nil {
 		if gocbcore.IsErrorStatus(err, gocbcore.StatusScopeUnknown) {
@@ -137,7 +137,7 @@ func (c *Collection) clone() *Collection {
 }
 
 func (c *Collection) getKvProvider() (kvProvider, error) {
-	cli := c.sb.getClient()
+	cli := c.sb.getCachedClient()
 	agent, err := cli.getKvProvider()
 	if err != nil {
 		return nil, err

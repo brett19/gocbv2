@@ -223,7 +223,7 @@ func (c *Cluster) AnalyticsQuery(statement string, opts *AnalyticsQueryOptions) 
 }
 
 func (c *Cluster) analyticsQuery(ctx context.Context, traceCtx opentracing.SpanContext, statement string, opts *AnalyticsQueryOptions,
-	provider queryProvider) (resultsOut *AnalyticsResults, errOut error) {
+	provider httpProvider) (resultsOut *AnalyticsResults, errOut error) {
 
 	queryOpts, err := opts.toMap(statement)
 	if err != nil {
@@ -271,7 +271,7 @@ func (c *Cluster) analyticsQuery(ctx context.Context, traceCtx opentracing.SpanC
 }
 
 func (c *Cluster) executeAnalyticsQuery(ctx context.Context, traceCtx opentracing.SpanContext, opts map[string]interface{},
-	provider queryProvider) (*AnalyticsResults, error) {
+	provider httpProvider) (*AnalyticsResults, error) {
 
 	// priority is sent as a header not in the body
 	priority, priorityCastOK := opts["priority"].(int)

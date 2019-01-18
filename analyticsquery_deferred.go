@@ -24,7 +24,7 @@ type analyticsDeferredResultHandle struct {
 	status    string
 	rows      *analyticsRows
 	err       error
-	provider  queryProvider
+	provider  httpProvider
 	hasResult bool
 	timeout   time.Duration
 }

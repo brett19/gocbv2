@@ -116,7 +116,8 @@ func (b *Bucket) ViewQuery(designDoc string, viewName string, opts *ViewOptions)
 	}
 	defer span.Finish()
 
-	provider, err := b.sb.cluster.getQueryProvider()
+	cli := b.sb.getCachedClient()
+	provider, err := cli.getHTTPProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +152,8 @@ func (b *Bucket) SpatialViewQuery(designDoc string, viewName string, opts *Spati
 	}
 	defer span.Finish()
 
-	provider, err := b.sb.cluster.getQueryProvider()
+	cli := b.sb.getCachedClient()
+	provider, err := cli.getHTTPProvider()
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +169,7 @@ func (b *Bucket) SpatialViewQuery(designDoc string, viewName string, opts *Spati
 }
 
 func (b *Bucket) executeViewQuery(ctx context.Context, traceCtx opentracing.SpanContext, viewType, ddoc, viewName string,
-	options url.Values, provider queryProvider) (*ViewResults, error) {
+	options url.Values, provider httpProvider) (*ViewResults, error) {
 
 	reqUri := fmt.Sprintf("/_design/%s/%s/%s?%s", ddoc, viewType, viewName, options.Encode())
 	req := &gocbcore.HttpRequest{

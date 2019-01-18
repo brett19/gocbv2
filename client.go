@@ -15,7 +15,7 @@ type client interface {
 	connect() error
 	fetchCollectionID(ctx context.Context, scopeName string, collectionName string) (uint32, error)
 	getKvProvider() (kvProvider, error)
-	getQueryProvider() (queryProvider, error)
+	getHTTPProvider() (httpProvider, error)
 	getDiagnosticsProvider() (diagnosticsProvider, error)
 	close() error
 }
@@ -46,7 +46,7 @@ func (c *stdClient) connect() error {
 
 	config := &gocbcore.AgentConfig{
 		// TODO: Generate the UserString appropriately
-		UserString:           "gocb/2.0.0-dev",
+		UserString:           "gocb/" + Version(),
 		ConnectTimeout:       60000 * time.Millisecond,
 		ServerConnectTimeout: 7000 * time.Millisecond,
 		NmvRetryDelay:        100 * time.Millisecond,
@@ -85,7 +85,7 @@ func (c *stdClient) getKvProvider() (kvProvider, error) {
 	return c.agent, nil
 }
 
-func (c *stdClient) getQueryProvider() (queryProvider, error) {
+func (c *stdClient) getHTTPProvider() (httpProvider, error) {
 	if c.agent == nil {
 		return nil, errors.New("Cluster not yet connected")
 	}

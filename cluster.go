@@ -90,6 +90,11 @@ func NewCluster(connStr string, opts ClusterOptions) (*Cluster, error) {
 		},
 	}
 
+	cluster.sb.N1qlTimeout = cluster.n1qlTimeout
+	cluster.sb.SearchTimeout = cluster.searchTimeout
+	cluster.sb.AnalyticsTimeout = cluster.analyticsTimeout
+	cluster.sb.client = cluster.getClient
+
 	err = cluster.parseExtraConnStrOptions(connSpec)
 	if err != nil {
 		return nil, err
@@ -128,7 +133,7 @@ func (c *Cluster) Bucket(bucketName string, opts *BucketOptions) (*Bucket, error
 	if opts == nil {
 		opts = &BucketOptions{}
 	}
-	b := newBucket(c, bucketName, *opts)
+	b := newBucket(&c.sb, bucketName, *opts)
 	err := b.connect()
 	if err != nil {
 		return nil, err
@@ -141,14 +146,14 @@ func (c *Cluster) getClient(sb *clientStateBlock) client {
 	defer c.connectionsLock.Unlock()
 
 	hash := sb.Hash()
-	if client, ok := c.connections[hash]; ok {
-		return client
+	if cli, ok := c.connections[hash]; ok {
+		return cli
 	}
 
-	client := newClient(c, sb)
-	c.connections[hash] = client
+	cli := newClient(c, sb)
+	c.connections[hash] = cli
 
-	return client
+	return cli
 }
 
 func (c *Cluster) randomClient() (client, error) {
@@ -213,13 +218,13 @@ func (c *Cluster) Close(opts *ClusterCloseOptions) error {
 	return overallErr
 }
 
-func (c *Cluster) getQueryProvider() (queryProvider, error) {
+func (c *Cluster) getQueryProvider() (httpProvider, error) {
 	client, err := c.randomClient()
 	if err != nil {
 		return nil, err
 	}
 
-	provider, err := client.getQueryProvider()
+	provider, err := client.getHTTPProvider()
 	if err != nil {
 		return nil, err
 	}
