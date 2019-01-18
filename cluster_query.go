@@ -181,7 +181,7 @@ func (c *Cluster) Query(statement string, opts *QueryOptions) (*QueryResults, er
 	}
 	defer span.Finish()
 
-	provider, err := c.getQueryProvider()
+	provider, err := c.getHTTPProvider()
 	if err != nil {
 		return nil, err
 	}

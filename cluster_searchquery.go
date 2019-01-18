@@ -138,7 +138,7 @@ func (c *Cluster) SearchQuery(q SearchQuery, opts *SearchQueryOptions) (*SearchR
 	}
 	defer span.Finish()
 
-	provider, err := c.getQueryProvider()
+	provider, err := c.getHTTPProvider()
 	if err != nil {
 		return nil, err
 	}

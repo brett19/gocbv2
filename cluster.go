@@ -186,7 +186,14 @@ func (c *Cluster) Users() (*UserManager, error) {
 
 // Buckets returns a new BuckesManager for the Cluster.
 func (c *Cluster) Buckets() (*BucketManager, error) {
-	return nil, errors.New("Not implemented")
+	provider, err := c.getHTTPProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	return &BucketManager{
+		httpClient: provider,
+	}, nil
 }
 
 // QueryIndexes returns a new QueryIndexManager for the Cluster.
@@ -218,7 +225,7 @@ func (c *Cluster) Close(opts *ClusterCloseOptions) error {
 	return overallErr
 }
 
-func (c *Cluster) getQueryProvider() (httpProvider, error) {
+func (c *Cluster) getHTTPProvider() (httpProvider, error) {
 	client, err := c.randomClient()
 	if err != nil {
 		return nil, err

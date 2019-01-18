@@ -214,7 +214,7 @@ func (c *Cluster) AnalyticsQuery(statement string, opts *AnalyticsQueryOptions) 
 	}
 	defer span.Finish()
 
-	provider, err := c.getQueryProvider()
+	provider, err := c.getHTTPProvider()
 	if err != nil {
 		return nil, err
 	}

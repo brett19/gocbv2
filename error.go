@@ -249,15 +249,20 @@ type NetworkError interface {
 }
 
 type networkError struct {
+	message     string
 	statusCode  int
 	isRetryable bool
 }
 
 func (e networkError) Error() string {
-	if e.statusCode == 0 {
-		return fmt.Sprintf("a network error occurred")
+	if e.statusCode > 0 && e.message != "" {
+		return fmt.Sprintf("a network error occurred with status code: %d and message: %s", e.statusCode, e.message)
+	} else if e.statusCode > 0 {
+		return fmt.Sprintf("a network error occurred with status code: %d", e.statusCode)
+	} else if e.message != "" {
+		return fmt.Sprintf("a network error occurred with message: %s", e.message)
 	}
-	return fmt.Sprintf("a network error occurred with status code: %d", e.statusCode)
+	return fmt.Sprintf("a network error occurred")
 }
 
 // StatusCode returns the HTTP status code for the error, only applicable to HTTP services.
