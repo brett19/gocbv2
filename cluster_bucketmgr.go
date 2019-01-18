@@ -83,8 +83,9 @@ func bucketDataInToSettings(bucketData *bucketDataIn) *BucketSettings {
 // GetBuckets returns a list of all active buckets on the cluster.
 func (bm *BucketManager) GetBuckets() ([]*BucketSettings, error) {
 	req := &gocbcore.HttpRequest{
-		Path:   "/pools/default/buckets",
-		Method: "GET",
+		Service: gocbcore.ServiceType(MgmtService),
+		Path:    "/pools/default/buckets",
+		Method:  "GET",
 	}
 
 	resp, err := bm.httpClient.DoHttpRequest(req)
@@ -145,6 +146,7 @@ func (bm *BucketManager) InsertBucket(settings *BucketSettings) error {
 	data := []byte(posts.Encode())
 
 	req := &gocbcore.HttpRequest{
+		Service:     gocbcore.ServiceType(MgmtService),
 		Path:        "/pools/default/buckets",
 		Method:      "POST",
 		Body:        data,
@@ -180,8 +182,9 @@ func (bm *BucketManager) UpdateBucket(settings *BucketSettings) error {
 // RemoveBucket will delete a bucket from the cluster by name.
 func (bm *BucketManager) RemoveBucket(name string) error {
 	req := &gocbcore.HttpRequest{
-		Path:   fmt.Sprintf("/pools/default/buckets/%s", name),
-		Method: "DELETE",
+		Service: gocbcore.ServiceType(MgmtService),
+		Path:    fmt.Sprintf("/pools/default/buckets/%s", name),
+		Method:  "DELETE",
 	}
 
 	resp, err := bm.httpClient.DoHttpRequest(req)
@@ -208,8 +211,9 @@ func (bm *BucketManager) RemoveBucket(name string) error {
 // Keep in mind that you must have flushing enabled in the buckets configuration.
 func (bm *BucketManager) Flush(name string) error {
 	req := &gocbcore.HttpRequest{
-		Path:   fmt.Sprintf("/pools/default/buckets/%s/controller/doFlush", name),
-		Method: "POST",
+		Service: gocbcore.ServiceType(MgmtService),
+		Path:    fmt.Sprintf("/pools/default/buckets/%s/controller/doFlush", name),
+		Method:  "POST",
 	}
 
 	resp, err := bm.httpClient.DoHttpRequest(req)

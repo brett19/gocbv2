@@ -201,6 +201,18 @@ func (c *Cluster) QueryIndexes() (*QueryIndexManager, error) {
 	return nil, errors.New("Not implemented")
 }
 
+// SearchIndexes returns a new SerchIndexManager for the Cluster.
+func (c *Cluster) SearchIndexes() (*SearchIndexManager, error) {
+	provider, err := c.getHTTPProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	return &SearchIndexManager{
+		httpClient: provider,
+	}, nil
+}
+
 // Nodes returns a new NodeManger for the Cluster.
 func (c *Cluster) Nodes() (*NodeManger, error) {
 	return nil, errors.New("Not implemented")
