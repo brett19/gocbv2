@@ -181,7 +181,14 @@ func (c *Cluster) connSpec() gocbconnstr.ConnSpec {
 
 // Users returns a new UserManager for the Cluster.
 func (c *Cluster) Users() (*UserManager, error) {
-	return nil, errors.New("Not implemented")
+	provider, err := c.getHTTPProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	return &UserManager{
+		httpClient: provider,
+	}, nil
 }
 
 // Buckets returns a new BuckesManager for the Cluster.
@@ -198,7 +205,9 @@ func (c *Cluster) Buckets() (*BucketManager, error) {
 
 // QueryIndexes returns a new QueryIndexManager for the Cluster.
 func (c *Cluster) QueryIndexes() (*QueryIndexManager, error) {
-	return nil, errors.New("Not implemented")
+	return &QueryIndexManager{
+		ExecuteQuery: c.Query,
+	}, nil
 }
 
 // SearchIndexes returns a new SerchIndexManager for the Cluster.

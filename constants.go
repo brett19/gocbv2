@@ -8,6 +8,17 @@ const (
 	goCbVersionStr = "v2.0.0-dev"
 )
 
+// IndexType provides information on the type of indexer used for an index.
+type IndexType string
+
+const (
+	// IndexTypeN1ql indicates that GSI was used to build the index.
+	IndexTypeN1ql = IndexType("gsi")
+
+	// IndexTypeView indicates that views were used to build the index.
+	IndexTypeView = IndexType("views")
+)
+
 // ServiceType specifies a particular Couchbase service type.
 type ServiceType gocbcore.ServiceType
 

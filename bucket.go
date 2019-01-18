@@ -61,9 +61,18 @@ func (b *Bucket) DefaultCollection(opts *CollectionOptions) (*Collection, error)
 	return b.defaultScope().DefaultCollection(opts)
 }
 
-// Views returns a new ViewsManager for the Bucket.
-func (b *Bucket) Views() *ViewsManager {
-	return newViewsManager(b)
+// Views returns a new ViewManager for the Bucket.
+func (b *Bucket) Views() (*ViewManager, error) {
+	cli := b.sb.getCachedClient()
+	provider, err := cli.getHTTPProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	return &ViewManager{
+		bucket:     b,
+		httpClient: provider,
+	}, nil
 }
 
 func (b *Bucket) stateBlock() stateBlock {
