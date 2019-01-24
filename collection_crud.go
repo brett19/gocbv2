@@ -3,7 +3,6 @@ package gocb
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -244,8 +243,6 @@ func (c *Collection) upsert(traceCtx opentracing.SpanContext, key string, val in
 		return
 	}
 
-	log.Printf("Transcoding")
-
 	bytes, flags, err := DefaultEncode(val)
 	if err != nil {
 		errOut = err
@@ -336,14 +333,10 @@ func (c *Collection) replace(traceCtx opentracing.SpanContext, key string, val i
 		opts.Encode = DefaultEncode
 	}
 
-	log.Printf("Fetching Agent")
-
 	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
 	}
-
-	log.Printf("Transcoding")
 
 	bytes, flags, err := opts.Encode(val)
 	if err != nil {
@@ -422,7 +415,9 @@ func (c *Collection) Get(key string, opts *GetOptions) (docOut *GetResult, errOu
 	if len(opts.Project) == 0 && !opts.WithExpiry {
 		// No projection and no expiry so standard fulldoc
 		docOut, errOut = c.get(deadlinedCtx, span.Context(), key, opts)
-		docOut.id = key
+		if docOut != nil {
+			docOut.id = key
+		}
 		return
 	}
 

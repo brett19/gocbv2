@@ -23,7 +23,7 @@ var globalCollection *Collection
 var globalCluster *testCluster
 
 func TestMain(m *testing.M) {
-	SetLogger(VerboseStdioLogger())
+	// SetLogger(VerboseStdioLogger())
 
 	server := flag.String("server", "", "The connection string to connect to for a real server")
 	user := flag.String("user", "", "The username to use to authenticate when using a real server")

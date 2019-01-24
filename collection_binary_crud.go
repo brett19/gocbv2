@@ -148,15 +148,20 @@ type CounterOptions struct {
 	ParentSpanContext opentracing.SpanContext
 	Timeout           time.Duration
 	Context           context.Context
-	ExpireAt          time.Time
-	Initial           int64
-	Delta             uint64
+	// Expiration is the length of time in seconds that the document will be stored in Couchbase.
+	// A value of 0 will set the document to never expire.
+	Expiration uint32
+	// Initial, if non-negative, is the `initial` value to use for the document if it does not exist.
+	// If present, this is the value that will be returned by a successful operation.
+	Initial int64
+	// Delta is the value to use for incrementing/decrementing if Initial is not present.
+	Delta uint64
 }
 
 // Increment performs an atomic addition for an integer document. Passing a
 // non-negative `initial` value will cause the document to be created if it did not
 // already exist.
-func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (mutOut *CounterResult, errOut error) {
+func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (countOut *CounterResult, errOut error) {
 	if opts == nil {
 		opts = &CounterOptions{}
 	}
@@ -178,13 +183,6 @@ func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (mutOut *
 		realInitial = uint64(opts.Initial)
 	}
 
-	var expiry uint32
-	if opts.ExpireAt.IsZero() {
-		expiry = 0
-	} else {
-		expiry = uint32(opts.ExpireAt.Unix())
-	}
-
 	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
@@ -196,7 +194,7 @@ func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (mutOut *
 		CollectionID: c.collectionID(),
 		Delta:        opts.Delta,
 		Initial:      realInitial,
-		Expiry:       expiry,
+		Expiry:       opts.Expiration,
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.CounterResult, err error) {
 		if err != nil {
@@ -213,7 +211,7 @@ func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (mutOut *
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &CounterResult{
+		countOut = &CounterResult{
 			mt:      mutTok,
 			cas:     Cas(res.Cas),
 			content: res.Value,
@@ -231,7 +229,7 @@ func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (mutOut *
 // Decrement performs an atomic subtraction for an integer document. Passing a
 // non-negative `initial` value will cause the document to be created if it did not
 // already exist.
-func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (mutOut *CounterResult, errOut error) {
+func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (countOut *CounterResult, errOut error) {
 	if opts == nil {
 		opts = &CounterOptions{}
 	}
@@ -253,13 +251,6 @@ func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (mutOut *
 		realInitial = uint64(opts.Initial)
 	}
 
-	var expiry uint32
-	if opts.ExpireAt.IsZero() {
-		expiry = 0
-	} else {
-		expiry = uint32(opts.ExpireAt.Unix())
-	}
-
 	agent, err := c.getKvProvider()
 	if err != nil {
 		return nil, err
@@ -271,7 +262,7 @@ func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (mutOut *
 		CollectionID: c.collectionID(),
 		Delta:        opts.Delta,
 		Initial:      realInitial,
-		Expiry:       expiry,
+		Expiry:       opts.Expiration,
 		TraceContext: span.Context(),
 	}, func(res *gocbcore.CounterResult, err error) {
 		if err != nil {
@@ -288,7 +279,7 @@ func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (mutOut *
 			token:      res.MutationToken,
 			bucketName: c.sb.BucketName,
 		}
-		mutOut = &CounterResult{
+		countOut = &CounterResult{
 			mt:      mutTok,
 			cas:     Cas(res.Cas),
 			content: res.Value,

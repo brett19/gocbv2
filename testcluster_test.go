@@ -1,6 +1,11 @@
 package gocb
 
-import "gopkg.in/couchbaselabs/gojcbmock.v1"
+import (
+	"math"
+	"time"
+
+	"gopkg.in/couchbaselabs/gojcbmock.v1"
+)
 
 type FeatureCode int
 
@@ -107,4 +112,15 @@ func (c *testCluster) SupportsFeature(feature FeatureCode) bool {
 
 func (c *testCluster) NotSupportsFeature(feature FeatureCode) bool {
 	return !c.SupportsFeature(feature)
+}
+
+func (c *testCluster) TimeTravel(waitDura time.Duration) {
+	if c.isMock() {
+		waitSecs := int(math.Ceil(float64(waitDura) / float64(time.Second)))
+		c.Mock.Control(gojcbmock.NewCommand(gojcbmock.CTimeTravel, map[string]interface{}{
+			"Offset": waitSecs,
+		}))
+	} else {
+		time.Sleep(waitDura)
+	}
 }

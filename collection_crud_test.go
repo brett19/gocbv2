@@ -1,7 +1,9 @@
 package gocb
 
 import (
+	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -25,31 +27,8 @@ func TestGetNoOptions(t *testing.T) {
 		datatype: 1,
 		value:    expectedBytes,
 	}
-	clients := make(map[string]client)
-	clients["mock-false"] = &mockClient{
-		bucketName:        "mock",
-		collectionId:      0,
-		scopeId:           0,
-		useMutationTokens: false,
-		mockKvProvider:    provider,
-	}
 
-	c := &Cluster{
-		connections: clients,
-	}
-	b := &Bucket{
-		sb: stateBlock{
-			cluster: c,
-			clientStateBlock: clientStateBlock{
-				BucketName: "mock",
-			},
-		},
-	}
-
-	col, err := b.DefaultCollection(nil)
-	if err != nil {
-		t.Fatalf("Opening collection encountered error: %v", err)
-	}
+	col := testGetCollection(t, provider)
 
 	res, err := col.Get("key", nil)
 	if err != nil {
@@ -107,31 +86,8 @@ func TestGetWithExpiry(t *testing.T) {
 		value:    resultOps,
 		opWait:   1 * time.Millisecond,
 	}
-	clients := make(map[string]client)
-	clients["mock-false"] = &mockClient{
-		bucketName:        "mock",
-		collectionId:      0,
-		scopeId:           0,
-		useMutationTokens: false,
-		mockKvProvider:    provider,
-	}
+	col := testGetCollection(t, provider)
 
-	c := &Cluster{
-		connections: clients,
-	}
-	b := &Bucket{
-		sb: stateBlock{
-			cluster: c,
-			clientStateBlock: clientStateBlock{
-				BucketName: "mock",
-			},
-		},
-	}
-
-	col, err := b.DefaultCollection(nil)
-	if err != nil {
-		t.Fatalf("Opening collection encountered error: %v", err)
-	}
 	res, err := col.Get("key", &GetOptions{WithExpiry: true})
 	if err != nil {
 		t.Fatalf("Get encountered error: %v", err)
@@ -219,6 +175,7 @@ func TestGetProject(t *testing.T) {
 	}
 }
 
+// Not a test, just gets a collection instance.
 func testGetCollection(t *testing.T, provider *mockKvOperator) *Collection {
 	clients := make(map[string]client)
 	clients["mock-false"] = &mockClient{
@@ -233,10 +190,14 @@ func testGetCollection(t *testing.T, provider *mockKvOperator) *Collection {
 	}
 	b := &Bucket{
 		sb: stateBlock{
-			cluster: c,
 			clientStateBlock: clientStateBlock{
 				BucketName: "mock",
 			},
+
+			client:           c.getClient,
+			AnalyticsTimeout: c.analyticsTimeout,
+			N1qlTimeout:      c.n1qlTimeout,
+			SearchTimeout:    c.searchTimeout,
 		},
 	}
 	col, err := b.DefaultCollection(nil)
@@ -244,4 +205,71 @@ func testGetCollection(t *testing.T, provider *mockKvOperator) *Collection {
 		t.Fatalf("Opening collection encountered error: %v", err)
 	}
 	return col
+}
+
+// In this test it is expected that the operation will timeout and ctx.Err() will be DeadlineExceeded.
+func TestInsertContextTimeout1(t *testing.T) {
+	var doc testBreweryDocument
+	err := loadJSONTestDataset("beer_sample_single", &doc)
+	if err != nil {
+		t.Fatalf("Could not load dataset: %v", err)
+	}
+
+	provider := &mockKvOperator{
+		cas:                   gocbcore.Cas(0),
+		datatype:              1,
+		value:                 nil,
+		opWait:                2000 * time.Millisecond,
+		opCancellationSuccess: true,
+	}
+	col := testGetCollection(t, provider)
+
+	ctx, _ := context.WithTimeout(context.Background(), 2*time.Millisecond)
+	opts := InsertOptions{Context: ctx, Timeout: 200 * time.Millisecond}
+	_, err = col.Insert("insertDocTimeout", doc, &opts)
+	if err == nil {
+		t.Fatalf("Insert succeeded, should have timedout")
+	}
+
+	if !IsTimeoutError(err) {
+		t.Fatalf("Error should have been timeout error, was %s", reflect.TypeOf(err).Name())
+	}
+
+	if ctx.Err() != context.DeadlineExceeded {
+		t.Fatalf("Error should have been DeadlineExceeded error")
+	}
+}
+
+// In this test it is expected that the operation will timeout but ctx.Err() will be nil as it is the timeout value
+// that is hit.
+func TestInsertContextTimeout2(t *testing.T) {
+	var doc testBreweryDocument
+	err := loadJSONTestDataset("beer_sample_single", &doc)
+	if err != nil {
+		t.Fatalf("Could not load dataset: %v", err)
+	}
+
+	provider := &mockKvOperator{
+		cas:                   gocbcore.Cas(0),
+		datatype:              1,
+		value:                 nil,
+		opWait:                2000 * time.Millisecond,
+		opCancellationSuccess: true,
+	}
+	col := testGetCollection(t, provider)
+
+	ctx, _ := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	opts := InsertOptions{Context: ctx, Timeout: 2 * time.Millisecond}
+	_, err = col.Insert("insertDocTimeout", doc, &opts)
+	if err == nil {
+		t.Fatalf("Insert succeeded, should have timedout")
+	}
+
+	if !IsTimeoutError(err) {
+		t.Fatalf("Error should have been timeout error, was %s", reflect.TypeOf(err).Name())
+	}
+
+	if ctx.Err() != nil {
+		t.Fatalf("Context error should have been nil")
+	}
 }

@@ -182,7 +182,7 @@ func (b *Bucket) Ping(opts *PingOptions) (*PingReport, error) {
 
 		resp, err := provider.DoHttpRequest(&req)
 		if err != nil {
-			return 0, "", err
+			return 0, req.Endpoint, err
 		}
 
 		err = resp.Body.Close()
@@ -192,7 +192,7 @@ func (b *Bucket) Ping(opts *PingOptions) (*PingReport, error) {
 
 		pingLatency := time.Now().Sub(startTime)
 
-		return pingLatency, resp.Endpoint, err
+		return pingLatency, req.Endpoint, err
 	}
 
 	for _, serviceType := range services {

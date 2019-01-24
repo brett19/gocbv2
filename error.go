@@ -28,10 +28,25 @@ type kvError struct {
 	status      gocbcore.StatusCode
 	description string
 	opaque      uint32
+	context     string
+	ref         string
+	name        string
 }
 
 func (err kvError) Error() string {
-	return err.description
+	if err.context != "" && err.ref != "" {
+		return fmt.Sprintf("%s (%s, context: %s, ref: %s)", err.description, err.name, err.context, err.ref)
+	} else if err.context != "" {
+		return fmt.Sprintf("%s (%s, context: %s)", err.description, err.name, err.context)
+	} else if err.ref != "" {
+		return fmt.Sprintf("%s (%s, ref: %s)", err.description, err.name, err.ref)
+	} else if err.name != "" && err.description != "" {
+		return fmt.Sprintf("%s (%s)", err.description, err.name)
+	} else if err.description != "" {
+		return err.description
+	}
+
+	return fmt.Sprintf("an unknown error occurred (%d)", err.status)
 }
 
 func (err kvError) StatusCode() int {
@@ -583,12 +598,15 @@ func isRetryableError(err error) bool {
 func maybeEnhanceErr(err error, key string) error {
 	cause := errors.Cause(err)
 	switch errType := cause.(type) {
-	case gocbcore.KvError:
+	case *gocbcore.KvError:
 		return kvError{
 			id:          key,
 			status:      errType.Code,
 			description: errType.Description,
 			opaque:      errType.Opaque,
+			context:     errType.Context,
+			ref:         errType.Ref,
+			name:        errType.Name,
 		}
 	default:
 	}

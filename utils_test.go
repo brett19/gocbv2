@@ -4,21 +4,20 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"testing"
-	"time"
 )
 
 type testBeerDocument struct {
-	ABV         float32   `json:"abv,omitempty"`
-	BreweryID   string    `json:"brewery_id,omitempty"`
-	Category    string    `json:"category,omitempty"`
-	Description string    `json:"description,omitempty"`
-	IBU         int       `json:"IBU,omitempty"`
-	Name        string    `json:"name,omitempty"`
-	SRM         int       `json:"srm,omitempty"`
-	Style       string    `json:"style,omitempty"`
-	Type        string    `json:"type,omitempty"`
-	UPC         int       `json:"upc,omitempty"`
-	Updated     time.Time `json:"updated,omitempty"`
+	ABV         float32 `json:"abv,omitempty"`
+	BreweryID   string  `json:"brewery_id,omitempty"`
+	Category    string  `json:"category,omitempty"`
+	Description string  `json:"description,omitempty"`
+	IBU         int     `json:"IBU,omitempty"`
+	Name        string  `json:"name,omitempty"`
+	SRM         int     `json:"srm,omitempty"`
+	Style       string  `json:"style,omitempty"`
+	Type        string  `json:"type,omitempty"`
+	UPC         int     `json:"upc,omitempty"`
+	Updated     string  `json:"updated,omitempty"`
 }
 
 type testBreweryGeo struct {
@@ -37,7 +36,7 @@ type testBreweryDocument struct {
 	Phone       string         `json:"phone,omitempty"`
 	State       string         `json:"state,omitempty"`
 	Type        string         `json:"type,omitempty"`
-	Updated     time.Time      `json:"updated,omitempty"`
+	Updated     string         `json:"updated,omitempty"`
 	Website     string         `json:"website,omitempty"`
 }
 

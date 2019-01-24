@@ -33,19 +33,19 @@ func (d *GetResult) Expiration() uint32 {
 	return d.expiration
 }
 
-// Content assigns the value of the result into the valuePtr using json unmarshalling.
+// Content assigns the value of the result into the valuePtr using default decoding.
 func (d *GetResult) Content(valuePtr interface{}) error {
-	return json.Unmarshal(d.contents, valuePtr)
+	return DefaultDecode(d.contents, d.flags, valuePtr)
 }
 
 // Decode assigns the value of the result into the valuePtr using the decode function
 // specified.
-// func (d *GetResult) Decode(valuePtr interface{}, decode Decode) error {
-// 	if decode == nil {
-// 		decode = DefaultDecode
-// 	}
-// 	return decode(d.contents, d.flags, valuePtr)
-// }
+func (d *GetResult) Decode(valuePtr interface{}, decode Decode) error {
+	if decode == nil {
+		decode = DefaultDecode
+	}
+	return decode(d.contents, d.flags, valuePtr)
+}
 
 func (d *GetResult) fromSubDoc(ops []gocbcore.SubDocOp, result *LookupInResult) error {
 	content := make(map[string]interface{})
@@ -155,7 +155,7 @@ func (d *ExistsResult) Cas() Cas {
 
 // Exists returns whether or not the document exists.
 func (d *ExistsResult) Exists() bool {
-	return d.keyState == gocbcore.KeyStateNotFound
+	return d.keyState != gocbcore.KeyStateNotFound && d.keyState != gocbcore.KeyStateDeleted
 }
 
 // MutationResult is the return type of any store related operations. It contains Cas and mutation tokens.
