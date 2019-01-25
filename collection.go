@@ -3,7 +3,7 @@ package gocb
 import (
 	"context"
 	"errors"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	opentracing "github.com/opentracing/opentracing-go"
@@ -29,9 +29,8 @@ import (
 // }
 
 type Collection struct {
-	sb   stateBlock
-	csb  *collectionStateBlock
-	lock sync.Mutex
+	sb  stateBlock
+	csb *collectionStateBlock
 }
 
 type CollectionOptions struct {
@@ -45,41 +44,35 @@ func (c *Collection) setCollectionID(collectionID uint32) error {
 		return errors.New("collection already initialized")
 	}
 
-	c.lock.Lock()
-	c.csb.CollectionInitialized = true
-	c.csb.CollectionID = collectionID
+	atomic.StoreUint32(&c.csb.CollectionInitialized, 1)
+	atomic.StoreUint32(&c.csb.CollectionID, collectionID)
 	// c.csb.ScopeID = scopeID
-	c.lock.Unlock()
 
 	return nil
 }
 
 func (c *Collection) collectionID() uint32 {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	return c.csb.CollectionID
+	return atomic.LoadUint32(&c.csb.CollectionID)
 }
 
 func (c *Collection) initialized() bool {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	return c.csb.CollectionInitialized
+	return atomic.LoadUint32(&c.csb.CollectionInitialized) == 1
 }
 
 func (c *Collection) setCollectionUnknown() {
-	c.csb.CollectionUnknown = true
+	atomic.StoreUint32(&c.csb.CollectionUnknown, 1)
 }
 
 func (c *Collection) setScopeUnknown() {
-	c.csb.ScopeUnknown = true
+	atomic.StoreUint32(&c.csb.ScopeUnknown, 1)
 }
 
 func (c *Collection) scopeUnknown() bool {
-	return c.csb.ScopeUnknown
+	return atomic.LoadUint32(&c.csb.ScopeUnknown) == 1
 }
 
 func (c *Collection) collectionUnknown() bool {
-	return c.csb.CollectionUnknown
+	return atomic.LoadUint32(&c.csb.CollectionUnknown) == 1
 }
 
 func newCollection(scope *Scope, collectionName string, opts *CollectionOptions) (*Collection, error) {

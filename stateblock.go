@@ -19,9 +19,9 @@ func (sb *clientStateBlock) Hash() string {
 type collectionStateBlock struct {
 	CollectionID          uint32
 	ScopeID               uint32
-	CollectionInitialized bool
-	CollectionUnknown     bool
-	ScopeUnknown          bool
+	CollectionInitialized uint32
+	CollectionUnknown     uint32
+	ScopeUnknown          uint32
 }
 
 type servicesStateBlock struct {
