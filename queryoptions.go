@@ -92,9 +92,15 @@ func (opts *QueryOptions) toMap(statement string) (map[string]interface{}, error
 		execOpts["readonly"] = opts.ReadOnly
 	}
 
+	if opts.PositionalParameters != nil && opts.NamedParameters != nil {
+		return nil, errors.New("Positional and named parameters must be used exclusively")
+	}
+
 	if opts.PositionalParameters != nil {
 		execOpts["args"] = opts.PositionalParameters
-	} else if opts.NamedParameters != nil {
+	}
+
+	if opts.NamedParameters != nil {
 		for key, value := range opts.NamedParameters {
 			if !strings.HasPrefix(key, "$") {
 				key = "$" + key
@@ -108,11 +114,11 @@ func (opts *QueryOptions) toMap(statement string) (map[string]interface{}, error
 	}
 
 	if opts.PipelineBatch != 0 {
-		execOpts["pipeline_batch"] = strconv.Itoa(opts.ScanCap)
+		execOpts["pipeline_batch"] = strconv.Itoa(opts.PipelineBatch)
 	}
 
 	if opts.PipelineCap != 0 {
-		execOpts["pipeline_cap"] = strconv.Itoa(opts.ScanCap)
+		execOpts["pipeline_cap"] = strconv.Itoa(opts.PipelineCap)
 	}
 
 	return execOpts, nil

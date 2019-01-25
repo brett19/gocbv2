@@ -2,22 +2,12 @@ package gocb
 
 import (
 	"bytes"
-	"io"
 	"testing"
 	"time"
 
 	"github.com/pkg/errors"
 	"gopkg.in/couchbase/gocbcore.v7"
 )
-
-type testReadCloser struct {
-	io.Reader
-	closeErr error
-}
-
-func (trc *testReadCloser) Close() error {
-	return trc.closeErr
-}
 
 func TestPingN1QlService(t *testing.T) {
 	doHTTP := func(req *gocbcore.HttpRequest) (*gocbcore.HttpResponse, error) {

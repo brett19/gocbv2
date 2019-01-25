@@ -185,7 +185,7 @@ func IsNetworkError(err error) bool {
 	return false
 }
 
-// IsServiceNotFoundError indicates whether the passed error occured due to
+// IsServiceNotFoundError indicates whether the passed error occurred due to
 // the requested service not being found.
 func IsServiceNotFoundError(err error) bool {
 	cause := errors.Cause(err)

@@ -213,7 +213,7 @@ func (c *Cluster) query(ctx context.Context, traceCtx opentracing.SpanContext, s
 	queryOpts["timeout"] = timeout.String()
 
 	// Doing this will set the context deadline to whichever is shorter, what is already set or the timeout
-	// value TODO: should timeout be for the operation or per retry?
+	// value
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -390,6 +390,14 @@ func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.Spa
 	strace.SetTag("couchbase.operation_id", n1qlResp.RequestID)
 	strace.Finish()
 
+	epInfo, err := url.Parse(resp.Endpoint)
+	if err != nil {
+		logWarnf("Failed to parse N1QL source address")
+		epInfo = &url.URL{
+			Host: "",
+		}
+	}
+
 	if len(n1qlResp.Errors) > 0 {
 		errs := make([]QueryError, len(n1qlResp.Errors))
 		for i, e := range n1qlResp.Errors {
@@ -397,7 +405,7 @@ func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.Spa
 		}
 		return nil, queryMultiError{
 			errors:     errs,
-			endpoint:   resp.Endpoint,
+			endpoint:   epInfo.Host,
 			httpStatus: resp.StatusCode,
 			contextID:  n1qlResp.ClientContextID,
 		}
@@ -417,14 +425,6 @@ func (c *Cluster) executeN1qlQuery(ctx context.Context, traceCtx opentracing.Spa
 	executionTime, err := time.ParseDuration(n1qlResp.Metrics.ExecutionTime)
 	if err != nil {
 		logDebugf("Failed to parse execution time duration (%s)", err)
-	}
-
-	epInfo, err := url.Parse(resp.Endpoint)
-	if err != nil {
-		logWarnf("Failed to parse N1QL source address")
-		epInfo = &url.URL{
-			Host: "",
-		}
 	}
 
 	return &QueryResults{

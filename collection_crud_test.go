@@ -175,38 +175,6 @@ func TestGetProject(t *testing.T) {
 	}
 }
 
-// Not a test, just gets a collection instance.
-func testGetCollection(t *testing.T, provider *mockKvOperator) *Collection {
-	clients := make(map[string]client)
-	clients["mock-false"] = &mockClient{
-		bucketName:        "mock",
-		collectionId:      0,
-		scopeId:           0,
-		useMutationTokens: false,
-		mockKvProvider:    provider,
-	}
-	c := &Cluster{
-		connections: clients,
-	}
-	b := &Bucket{
-		sb: stateBlock{
-			clientStateBlock: clientStateBlock{
-				BucketName: "mock",
-			},
-
-			client:           c.getClient,
-			AnalyticsTimeout: c.analyticsTimeout,
-			N1qlTimeout:      c.n1qlTimeout,
-			SearchTimeout:    c.searchTimeout,
-		},
-	}
-	col, err := b.DefaultCollection(nil)
-	if err != nil {
-		t.Fatalf("Opening collection encountered error: %v", err)
-	}
-	return col
-}
-
 // In this test it is expected that the operation will timeout and ctx.Err() will be DeadlineExceeded.
 func TestInsertContextTimeout1(t *testing.T) {
 	var doc testBreweryDocument
@@ -224,7 +192,8 @@ func TestInsertContextTimeout1(t *testing.T) {
 	}
 	col := testGetCollection(t, provider)
 
-	ctx, _ := context.WithTimeout(context.Background(), 2*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Millisecond)
+	defer cancel()
 	opts := InsertOptions{Context: ctx, Timeout: 200 * time.Millisecond}
 	_, err = col.Insert("insertDocTimeout", doc, &opts)
 	if err == nil {
@@ -258,7 +227,8 @@ func TestInsertContextTimeout2(t *testing.T) {
 	}
 	col := testGetCollection(t, provider)
 
-	ctx, _ := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
 	opts := InsertOptions{Context: ctx, Timeout: 2 * time.Millisecond}
 	_, err = col.Insert("insertDocTimeout", doc, &opts)
 	if err == nil {

@@ -29,8 +29,7 @@ type mockKvOperator struct {
 }
 
 type mockHTTPProvider struct {
-	resp *gocbcore.HttpResponse
-	err  error
+	doFn func(req *gocbcore.HttpRequest) (*gocbcore.HttpResponse, error)
 }
 
 type mockPendingOp struct {
@@ -326,7 +325,7 @@ func (mko *mockKvOperator) NumReplicas() int {
 }
 
 func (p *mockHTTPProvider) DoHttpRequest(req *gocbcore.HttpRequest) (*gocbcore.HttpResponse, error) {
-	return p.resp, p.err
+	return p.doFn(req)
 }
 
 func (mc *mockClient) Hash() string {

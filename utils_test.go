@@ -2,6 +2,7 @@ package gocb
 
 import (
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"testing"
 )
@@ -46,6 +47,9 @@ func loadRawTestDataset(dataset string) ([]byte, error) {
 
 func loadJSONTestDataset(dataset string, valuePtr interface{}) error {
 	bytes, err := loadRawTestDataset(dataset)
+	if err != nil {
+		return err
+	}
 
 	err = json.Unmarshal(bytes, &valuePtr)
 	if err != nil {
@@ -62,4 +66,45 @@ func marshal(t *testing.T, value interface{}) []byte {
 	}
 
 	return b
+}
+
+type testReadCloser struct {
+	io.Reader
+	closeErr error
+}
+
+func (trc *testReadCloser) Close() error {
+	return trc.closeErr
+}
+
+// Not a test, just gets a collection instance.
+func testGetCollection(t *testing.T, provider *mockKvOperator) *Collection {
+	clients := make(map[string]client)
+	clients["mock-false"] = &mockClient{
+		bucketName:        "mock",
+		collectionId:      0,
+		scopeId:           0,
+		useMutationTokens: false,
+		mockKvProvider:    provider,
+	}
+	c := &Cluster{
+		connections: clients,
+	}
+	b := &Bucket{
+		sb: stateBlock{
+			clientStateBlock: clientStateBlock{
+				BucketName: "mock",
+			},
+
+			client:           c.getClient,
+			AnalyticsTimeout: c.analyticsTimeout,
+			N1qlTimeout:      c.n1qlTimeout,
+			SearchTimeout:    c.searchTimeout,
+		},
+	}
+	col, err := b.DefaultCollection(nil)
+	if err != nil {
+		t.Fatalf("Opening collection encountered error: %v", err)
+	}
+	return col
 }

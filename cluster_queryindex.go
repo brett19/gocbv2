@@ -233,7 +233,7 @@ func (qm *QueryIndexManager) WatchIndexes(watchList []string, watchPrimary bool,
 			return timeoutError{}
 		}
 
-		// Wait till our next poll interval
+		// wait till our next poll interval
 		time.Sleep(curInterval)
 	}
 

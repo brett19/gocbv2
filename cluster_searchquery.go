@@ -201,6 +201,9 @@ func (c *Cluster) searchQuery(ctx context.Context, traceCtx opentracing.SpanCont
 	}
 
 	err = queryData.Set("query", dq.Query)
+	if err != nil {
+		return nil, err
+	}
 
 	// Doing this will set the context deadline to whichever is shorter, what is already set or the timeout
 	// value
