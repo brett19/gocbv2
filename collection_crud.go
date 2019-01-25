@@ -65,11 +65,11 @@ func (c *Collection) newOpManager(ctx context.Context) *opManager {
 	}
 }
 
-func (ctrl *opManager) Resolve() {
+func (ctrl *opManager) resolve() {
 	ctrl.signal <- struct{}{}
 }
 
-func (ctrl *opManager) Wait(op gocbcore.PendingOp, err error) (errOut error) {
+func (ctrl *opManager) wait(op gocbcore.PendingOp, err error) (errOut error) {
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func (c *Collection) insert(traceCtx opentracing.SpanContext, key string, val in
 	encodeSpan.Finish()
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.AddEx(gocbcore.AddOptions{
+	err = ctrl.wait(agent.AddEx(gocbcore.AddOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		Value:        bytes,
@@ -181,7 +181,7 @@ func (c *Collection) insert(traceCtx opentracing.SpanContext, key string, val in
 				c.setCollectionUnknown()
 			}
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 
@@ -194,7 +194,7 @@ func (c *Collection) insert(traceCtx opentracing.SpanContext, key string, val in
 		}
 		mutOut.cas = Cas(res.Cas)
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -250,7 +250,7 @@ func (c *Collection) upsert(traceCtx opentracing.SpanContext, key string, val in
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.SetEx(gocbcore.SetOptions{
+	err = ctrl.wait(agent.SetEx(gocbcore.SetOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		Value:        bytes,
@@ -264,7 +264,7 @@ func (c *Collection) upsert(traceCtx opentracing.SpanContext, key string, val in
 			}
 
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 
@@ -277,7 +277,7 @@ func (c *Collection) upsert(traceCtx opentracing.SpanContext, key string, val in
 		}
 		mutOut.cas = Cas(res.Cas)
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		return
@@ -344,7 +344,7 @@ func (c *Collection) replace(traceCtx opentracing.SpanContext, key string, val i
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.ReplaceEx(gocbcore.ReplaceOptions{
+	err = ctrl.wait(agent.ReplaceEx(gocbcore.ReplaceOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		Value:        bytes,
@@ -358,7 +358,7 @@ func (c *Collection) replace(traceCtx opentracing.SpanContext, key string, val i
 				c.setCollectionUnknown()
 			}
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 
@@ -371,7 +371,7 @@ func (c *Collection) replace(traceCtx opentracing.SpanContext, key string, val i
 		}
 		mutOut.cas = Cas(res.Cas)
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -463,7 +463,7 @@ func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, 
 	}
 
 	ctrl := c.newOpManager(ctx)
-	err = ctrl.Wait(agent.GetEx(gocbcore.GetOptions{
+	err = ctrl.wait(agent.GetEx(gocbcore.GetOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		TraceContext: traceCtx,
@@ -474,7 +474,7 @@ func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, 
 			}
 
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 		if res != nil {
@@ -488,7 +488,7 @@ func (c *Collection) get(ctx context.Context, traceCtx opentracing.SpanContext, 
 			docOut = doc
 		}
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -528,7 +528,7 @@ func (c *Collection) Exists(key string, opts *ExistsOptions) (docOut *ExistsResu
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.ObserveEx(gocbcore.ObserveOptions{
+	err = ctrl.wait(agent.ObserveEx(gocbcore.ObserveOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		TraceContext: span.Context(),
@@ -540,7 +540,7 @@ func (c *Collection) Exists(key string, opts *ExistsOptions) (docOut *ExistsResu
 			}
 
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 		if res != nil {
@@ -553,7 +553,7 @@ func (c *Collection) Exists(key string, opts *ExistsOptions) (docOut *ExistsResu
 			docOut = doc
 		}
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -593,7 +593,7 @@ func (c *Collection) GetFromReplica(key string, replicaIdx int, opts *GetFromRep
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.GetReplicaEx(gocbcore.GetReplicaOptions{
+	err = ctrl.wait(agent.GetReplicaEx(gocbcore.GetReplicaOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		TraceContext: span.Context(),
@@ -605,7 +605,7 @@ func (c *Collection) GetFromReplica(key string, replicaIdx int, opts *GetFromRep
 			}
 
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 		if res != nil {
@@ -619,7 +619,7 @@ func (c *Collection) GetFromReplica(key string, replicaIdx int, opts *GetFromRep
 			docOut = doc
 		}
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -675,7 +675,7 @@ func (c *Collection) remove(traceCtx opentracing.SpanContext, key string, opts R
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.DeleteEx(gocbcore.DeleteOptions{
+	err = ctrl.wait(agent.DeleteEx(gocbcore.DeleteOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		Cas:          gocbcore.Cas(opts.Cas),
@@ -687,7 +687,7 @@ func (c *Collection) remove(traceCtx opentracing.SpanContext, key string, opts R
 			}
 
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 
@@ -700,7 +700,7 @@ func (c *Collection) remove(traceCtx opentracing.SpanContext, key string, opts R
 		}
 		mutOut.cas = Cas(res.Cas)
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -849,7 +849,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 	}
 
 	ctrl := c.newOpManager(ctx)
-	err = ctrl.Wait(agent.LookupInEx(gocbcore.LookupInOptions{
+	err = ctrl.wait(agent.LookupInEx(gocbcore.LookupInOptions{
 		Key:          []byte(key),
 		Flags:        spec.flags,
 		Ops:          spec.ops,
@@ -862,7 +862,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 			}
 
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 
@@ -885,7 +885,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 				err = resSet.ContentAt(0, &resSet.expiration)
 				if err != nil {
 					errOut = err
-					ctrl.Resolve()
+					ctrl.resolve()
 					return
 				}
 				resSet.contents = resSet.contents[1:]
@@ -894,7 +894,7 @@ func (c *Collection) lookupIn(ctx context.Context, traceCtx opentracing.SpanCont
 			docOut = resSet
 		}
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -1164,7 +1164,7 @@ func (c *Collection) mutate(traceCtx opentracing.SpanContext, key string, opts M
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.MutateInEx(gocbcore.MutateInOptions{
+	err = ctrl.wait(agent.MutateInEx(gocbcore.MutateInOptions{
 		Key:          []byte(key),
 		Flags:        gocbcore.SubdocDocFlag(flags),
 		Cas:          gocbcore.Cas(opts.Cas),
@@ -1179,7 +1179,7 @@ func (c *Collection) mutate(traceCtx opentracing.SpanContext, key string, opts M
 			}
 
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 
@@ -1193,7 +1193,7 @@ func (c *Collection) mutate(traceCtx opentracing.SpanContext, key string, opts M
 		mutRes.cas = Cas(res.Cas)
 		mutOut = mutRes
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -1233,7 +1233,7 @@ func (c *Collection) GetAndTouch(key string, expiration uint32, opts *GetAndTouc
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.GetAndTouchEx(gocbcore.GetAndTouchOptions{
+	err = ctrl.wait(agent.GetAndTouchEx(gocbcore.GetAndTouchOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		Expiry:       expiration,
@@ -1245,7 +1245,7 @@ func (c *Collection) GetAndTouch(key string, expiration uint32, opts *GetAndTouc
 			}
 
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 		if res != nil {
@@ -1259,7 +1259,7 @@ func (c *Collection) GetAndTouch(key string, expiration uint32, opts *GetAndTouc
 			docOut = doc
 		}
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -1299,7 +1299,7 @@ func (c *Collection) GetAndLock(key string, expiration uint32, opts *GetAndLockO
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.GetAndLockEx(gocbcore.GetAndLockOptions{
+	err = ctrl.wait(agent.GetAndLockEx(gocbcore.GetAndLockOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		LockTime:     expiration,
@@ -1311,7 +1311,7 @@ func (c *Collection) GetAndLock(key string, expiration uint32, opts *GetAndLockO
 			}
 
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 		if res != nil {
@@ -1325,7 +1325,7 @@ func (c *Collection) GetAndLock(key string, expiration uint32, opts *GetAndLockO
 			docOut = doc
 		}
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -1366,7 +1366,7 @@ func (c *Collection) Unlock(key string, opts *UnlockOptions) (mutOut *MutationRe
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.UnlockEx(gocbcore.UnlockOptions{
+	err = ctrl.wait(agent.UnlockEx(gocbcore.UnlockOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		Cas:          gocbcore.Cas(opts.Cas),
@@ -1378,7 +1378,7 @@ func (c *Collection) Unlock(key string, opts *UnlockOptions) (mutOut *MutationRe
 			}
 
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 
@@ -1391,7 +1391,7 @@ func (c *Collection) Unlock(key string, opts *UnlockOptions) (mutOut *MutationRe
 		}
 		mutOut.cas = Cas(res.Cas)
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -1432,7 +1432,7 @@ func (c *Collection) Touch(key string, expiration uint32, opts *GetAndTouchOptio
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.TouchEx(gocbcore.TouchOptions{
+	err = ctrl.wait(agent.TouchEx(gocbcore.TouchOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		Expiry:       expiration,
@@ -1444,7 +1444,7 @@ func (c *Collection) Touch(key string, expiration uint32, opts *GetAndTouchOptio
 			}
 
 			errOut = maybeEnhanceErr(err, key)
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 
@@ -1457,7 +1457,7 @@ func (c *Collection) Touch(key string, expiration uint32, opts *GetAndTouchOptio
 		}
 		mutOut.cas = Cas(res.Cas)
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err

@@ -44,7 +44,7 @@ func (c *CollectionBinary) Append(key string, val []byte, opts *AppendOptions) (
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.AppendEx(gocbcore.AdjoinOptions{
+	err = ctrl.wait(agent.AppendEx(gocbcore.AdjoinOptions{
 		Key:          []byte(key),
 		Value:        val,
 		CollectionID: c.collectionID(),
@@ -56,7 +56,7 @@ func (c *CollectionBinary) Append(key string, val []byte, opts *AppendOptions) (
 			}
 
 			errOut = err
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 
@@ -69,7 +69,7 @@ func (c *CollectionBinary) Append(key string, val []byte, opts *AppendOptions) (
 		}
 		mutOut.cas = Cas(res.Cas)
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -109,7 +109,7 @@ func (c *CollectionBinary) Prepend(key string, val []byte, opts *PrependOptions)
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.PrependEx(gocbcore.AdjoinOptions{
+	err = ctrl.wait(agent.PrependEx(gocbcore.AdjoinOptions{
 		Key:          []byte(key),
 		Value:        val,
 		CollectionID: c.collectionID(),
@@ -121,7 +121,7 @@ func (c *CollectionBinary) Prepend(key string, val []byte, opts *PrependOptions)
 			}
 
 			errOut = err
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 
@@ -134,7 +134,7 @@ func (c *CollectionBinary) Prepend(key string, val []byte, opts *PrependOptions)
 		}
 		mutOut.cas = Cas(res.Cas)
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -189,7 +189,7 @@ func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (countOut
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.IncrementEx(gocbcore.CounterOptions{
+	err = ctrl.wait(agent.IncrementEx(gocbcore.CounterOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		Delta:        opts.Delta,
@@ -203,7 +203,7 @@ func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (countOut
 			}
 
 			errOut = err
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 
@@ -217,7 +217,7 @@ func (c *CollectionBinary) Increment(key string, opts *CounterOptions) (countOut
 			content: res.Value,
 		}
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
@@ -257,7 +257,7 @@ func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (countOut
 	}
 
 	ctrl := c.newOpManager(deadlinedCtx)
-	err = ctrl.Wait(agent.DecrementEx(gocbcore.CounterOptions{
+	err = ctrl.wait(agent.DecrementEx(gocbcore.CounterOptions{
 		Key:          []byte(key),
 		CollectionID: c.collectionID(),
 		Delta:        opts.Delta,
@@ -271,7 +271,7 @@ func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (countOut
 			}
 
 			errOut = err
-			ctrl.Resolve()
+			ctrl.resolve()
 			return
 		}
 
@@ -285,7 +285,7 @@ func (c *CollectionBinary) Decrement(key string, opts *CounterOptions) (countOut
 			content: res.Value,
 		}
 
-		ctrl.Resolve()
+		ctrl.resolve()
 	}))
 	if err != nil {
 		errOut = err
