@@ -80,7 +80,7 @@ func (opts *ViewOptions) toURLValues() (*url.Values, error) {
 	}
 
 	if opts.Limit != 0 {
-		options.Set("limit", strconv.FormatUint(uint64(opts.Skip), 10))
+		options.Set("limit", strconv.FormatUint(uint64(opts.Limit), 10))
 	}
 
 	if opts.Order != 0 {

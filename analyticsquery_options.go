@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 )
 
 // AnalyticsQueryOptions is the set of options available to an Analytics query.
@@ -29,7 +30,7 @@ func (opts *AnalyticsQueryOptions) toMap(statement string) (map[string]interface
 	execOpts["statement"] = statement
 
 	if opts.ServerSideTimeout != 0 {
-		execOpts["timeout"] = opts.ServerSideTimeout
+		execOpts["timeout"] = opts.ServerSideTimeout.String()
 	}
 
 	if opts.Pretty {
@@ -48,9 +49,15 @@ func (opts *AnalyticsQueryOptions) toMap(statement string) (map[string]interface
 		execOpts["mode"] = "async"
 	}
 
+	if opts.PositionalParameters != nil && opts.NamedParameters != nil {
+		return nil, errors.New("Positional and named parameters must be used exclusively")
+	}
+
 	if opts.PositionalParameters != nil {
 		execOpts["args"] = opts.PositionalParameters
-	} else if opts.NamedParameters != nil {
+	}
+
+	if opts.NamedParameters != nil {
 		for key, value := range opts.NamedParameters {
 			if !strings.HasPrefix(key, "$") {
 				key = "$" + key
